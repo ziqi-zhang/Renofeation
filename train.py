@@ -1,7 +1,10 @@
 import os
+import os.path as osp
 import sys
 import time
 import argparse
+from pdb import set_trace as st
+import json
 
 import torch
 import numpy as np
@@ -148,7 +151,17 @@ def test(model, teacher, loader, loss=False):
 
     return float(top1)/total*100, total_ce/(i+1), np.sum(total_feat_reg)/(i+1), total_l2sp_reg/(i+1), total_feat_reg/(i+1)
 
-def train(model, train_loader, val_loader, iterations=9000, lr=1e-2, name='', l2sp_lmda=1e-2, teacher=None, reg_layers={}):
+def train(
+    model, 
+    train_loader, 
+    val_loader, 
+    iterations=9000, 
+    lr=1e-2, 
+    output_dir='results', 
+    l2sp_lmda=1e-2, 
+    teacher=None, 
+    reg_layers={}
+):
     model = model.to('cuda')
 
     if l2sp_lmda == 0:
@@ -179,6 +192,15 @@ def train(model, train_loader, val_loader, iterations=9000, lr=1e-2, name='', l2
     total_loss_meter  = MovingAverageMeter('Total Loss', ':6.3f')
     top1_meter  = MovingAverageMeter('Acc@1', ':6.2f')
 
+    train_path = osp.join(output_dir, "train.tsv")
+    with open(train_path, 'w') as wf:
+        columns = ['iter', 'loss', 'Acc']
+        wf.write('\t'.join(columns) + '\n')
+    test_path = osp.join(output_dir, "test.tsv")
+    with open(test_path, 'w') as wf:
+        columns = ['iter', 'loss', 'Acc']
+        wf.write('\t'.join(columns) + '\n')
+    
     dataloader_iterator = iter(train_loader)
     for i in range(iterations):
         if args.swa:
@@ -247,20 +269,44 @@ def train(model, train_loader, val_loader, iterations=9000, lr=1e-2, name='', l2
             progress = ProgressMeter(
                 iterations,
                 [batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
-                prefix="LR: {:6.5f}".format(current_lr))
+                prefix="LR: {:6.3f}".format(current_lr))
             progress.display(i)
 
         if (i % args.test_interval == 0) or (i == iterations-1):
-            test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = test(model, teacher, val_loader, loss=True)
-            train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(model, teacher, train_loader, loss=True)
+            test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = test(
+                model, teacher, val_loader, loss=True
+            )
+            train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(
+                model, teacher, train_loader, loss=True
+            )
             print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
             print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
+            with open(train_path, 'a') as af:
+                train_cols = [
+                    i, 
+                    round(train_ce_loss,2), 
+                    round(train_top1,2), 
+                ]
+                af.write('\t'.join([str(c) for c in train_cols]) + '\n')
+            with open(test_path, 'a') as af:
+                test_cols = [
+                    i, 
+                    round(test_ce_loss,2), 
+                    round(test_top1,2), 
+                ]
+                af.write('\t'.join([str(c) for c in test_cols]) + '\n')
             if not args.no_save:
-                if not os.path.exists('ckpt'):
-                    os.makedirs('ckpt')
-                torch.save({'state_dict': model.state_dict()}, 'ckpt/{}.pth'.format(name))
+                # if not os.path.exists('ckpt'):
+                #     os.makedirs('ckpt')
+                # torch.save({'state_dict': model.state_dict()}, 'ckpt/{}.pth'.format(name))
+                ckpt_path = osp.join(
+                    args.output_dir,
+                    "ckpt.pth"
+                )
+                torch.save({'state_dict': model.state_dict()}, ckpt_path)
 
     if args.swa:
+        raise NotImplementedError
         optimizer.swap_swa_sgd()
 
         for m in model.modules():
@@ -279,9 +325,13 @@ def train(model, train_loader, val_loader, iterations=9000, lr=1e-2, name='', l2
         print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
 
         if not args.no_save:
-            if not os.path.exists('ckpt'):
-                os.makedirs('ckpt')
-            torch.save({'state_dict': model.state_dict()}, 'ckpt/{}.pth'.format(name))
+            # if not os.path.exists('ckpt'):
+            #     os.makedirs('ckpt')
+            ckpt_path = osp.join(
+                args.output_dir,
+                "ckpt.pth"
+            )
+            torch.save({'state_dict': model.state_dict()}, ckpt_path)
 
     return model
 
@@ -313,6 +363,7 @@ def get_args():
     parser.add_argument("--network", type=str, default='resnet18', help='Network architecture. Currently support: \{resnet18, resnet50, resnet101, mbnetv2\}')
     parser.add_argument("--shot", type=int, default=-1, help='Number of training samples per class for the training dataset. -1 indicates using the full dataset.')
     parser.add_argument("--log", action='store_true', default=False, help='Redirect the output to log/args.name.log')
+    parser.add_argument("--output_dir", default="results")
     args = parser.parse_args()
     return args
 
@@ -322,13 +373,21 @@ def record_act(self, input, output):
 
 if __name__ == '__main__':
     args = get_args()
-
+    
     if args.log:
         if not os.path.exists('log'):
             os.makedirs('log')
         sys.stdout = open('log/{}.log'.format(args.name), 'w')
+    args.output_dir = osp.join(
+        args.output_dir,
+        args.name
+    )
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
 
-
+    params_out_path = osp.join(args.output_dir, 'params.json')
+    with open(params_out_path, 'w') as jf:
+        json.dump(vars(args), jf, indent=True)
     print(args)
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -336,37 +395,55 @@ if __name__ == '__main__':
     # Used to make sure we sample the same image for few-shot scenarios
     seed = 98
 
-    train_set = eval(args.dataset)(args.datapath, True, transforms.Compose([
+    train_set = eval(args.dataset)(
+        args.datapath, True, transforms.Compose([
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
-        ]), args.shot, seed, preload=False)
+        ]), 
+        args.shot, seed, preload=False
+    )
 
-    test_set = eval(args.dataset)(args.datapath, False, transforms.Compose([
+    test_set = eval(args.dataset)(
+        args.datapath, False, transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
-        ]), args.shot, seed, preload=False)
+        ]), 
+        args.shot, seed, preload=False
+    )
 
-    train_loader = torch.utils.data.DataLoader(train_set,
+    train_loader = torch.utils.data.DataLoader(
+        train_set,
         batch_size=args.batch_size, shuffle=True,
-        num_workers=8, pin_memory=True)
-
+        num_workers=8, pin_memory=False
+    )
+    
     val_loader = train_loader
 
-    test_loader = torch.utils.data.DataLoader(test_set,
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
         batch_size=args.batch_size, shuffle=False,
-        num_workers=8, pin_memory=False)
+        num_workers=8, pin_memory=False
+    )
 
-    model = eval('{}_dropout'.format(args.network))(pretrained=True, dropout=args.dropout, num_classes=train_loader.dataset.num_classes).cuda()
+    model = eval('{}_dropout'.format(args.network))(
+        pretrained=True, 
+        dropout=args.dropout, 
+        num_classes=train_loader.dataset.num_classes
+    ).cuda()
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
 
     # Pre-trained model
-    teacher = eval('{}_dropout'.format(args.network))(pretrained=True, dropout=0, num_classes=train_loader.dataset.num_classes).cuda()
+    teacher = eval('{}_dropout'.format(args.network))(
+        pretrained=True, 
+        dropout=0, 
+        num_classes=train_loader.dataset.num_classes
+    ).cuda()
 
     if 'mbnetv2' in args.network:
         reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4], 4: [model.layer5]}
@@ -409,4 +486,14 @@ if __name__ == '__main__':
         reg_layers[4].append(teacher.layer5)
         teacher.layer5.register_forward_hook(record_act)
 
-    train(model, train_loader, test_loader, l2sp_lmda=args.l2sp_lmda, iterations=args.iterations, lr=args.lr, name='{}'.format(args.name), teacher=teacher, reg_layers=reg_layers)
+    train(
+        model, 
+        train_loader, 
+        test_loader, 
+        l2sp_lmda=args.l2sp_lmda, 
+        iterations=args.iterations, 
+        lr=args.lr, 
+        output_dir=args.output_dir, 
+        teacher=teacher, 
+        reg_layers=reg_layers
+    )

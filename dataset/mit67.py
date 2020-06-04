@@ -5,6 +5,7 @@ import time
 import numpy as np
 import random
 import os
+from pdb import set_trace as st
 
 
 class MIT67Data(data.Dataset):
@@ -29,7 +30,7 @@ class MIT67Data(data.Dataset):
                 self.image_path.append(os.path.join(root, 'Images', line.strip()))
                 cls = line.split('/')[-2]
                 self.labels.append(self.cls_names.index(cls))
-
+        
         if is_train:
             indices = np.arange(0, len(self.image_path))
             random.seed(seed)
