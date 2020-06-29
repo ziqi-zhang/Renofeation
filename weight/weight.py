@@ -10,7 +10,7 @@ def weight_prune(
     begin_layer,
     prune_ratio,
     model_layer_depth,
-    random_prune=False,
+    kaiming_init=False,
 ):
     total = 0
     for name, module in model.named_modules():
@@ -42,18 +42,10 @@ def weight_prune(
         ):
             weight_copy = module.weight.data.abs().clone()
             mask = weight_copy.gt(thre).float()
-            if random_prune:
-                print(f"Random prune {name}")
-                mask = np.zeros(weight_copy.numel()) + 1
-                prune_number = round(prune_ratio * weight_copy.numel())
-                mask[:prune_number] = 0
-                np.random.shuffle(mask)
-                mask = mask.reshape(weight_copy.shape)
-                mask = torch.Tensor(mask)
-
             pruned = pruned + mask.numel() - torch.sum(mask)
             # np.random.shuffle(mask)
             module.weight.data.mul_(mask)
+            
             if int(torch.sum(mask)) == 0:
                 zero_flag = True
             remain_ratio = int(torch.sum(mask)) / mask.numel()
@@ -70,6 +62,8 @@ def weight_prune_all(
     model,
     prune_ratio,
     random_prune=False,
+    mode="small",
+    kaiming_init=False,
 ):
     total = 0
     for name, module in model.named_modules():
@@ -85,16 +79,38 @@ def weight_prune_all(
             index += size
     
     y, i = torch.sort(conv_weights)
-    thre_index = int(total * prune_ratio)
-    thre = y[thre_index]
+    # thre_index = int(total * prune_ratio)
+    # thre = y[thre_index]
+    if mode == "small":
+        thre_index = int(total * prune_ratio)
+        thre = y[thre_index]
+        print('Pruning threshold: {}'.format(thre))
+    elif mode == "large":
+        thre_index = int(total * prune_ratio)
+        thre = y[-thre_index]
+        print('Pruning threshold: {}'.format(thre))
+    elif mode == "mid":
+        thre_index = int(total * prune_ratio / 2)
+        low_thre = y[thre_index]
+        high_thre = y[-thre_index]
+        print('Pruning threshold: {} to {}'.format(low_thre, high_thre))
+    else:
+        raise NotImplementedError
+
     pruned = 0
-    print('Pruning threshold: {}'.format(thre))
+    
     zero_flag = False
     
     for name, module in model.named_modules():
         if ( isinstance(module, nn.Conv2d) ):
             weight_copy = module.weight.data.abs().clone()
-            mask = weight_copy.gt(thre).float()
+            # mask = weight_copy.gt(thre).float()
+            if mode == "small":
+                mask = weight_copy.gt(thre).float()
+            elif mode == "large":
+                mask = weight_copy.lt(thre).float()
+            elif mode == "mid":
+                mask = weight_copy.gt(low_thre).float() * weight_copy.lt(high_thre).float()
             if random_prune:
                 print(f"Random prune {name}")
                 mask = np.zeros(weight_copy.numel()) + 1
@@ -107,6 +123,14 @@ def weight_prune_all(
             pruned = pruned + mask.numel() - torch.sum(mask)
             # np.random.shuffle(mask)
             module.weight.data.mul_(mask)
+            if kaiming_init:
+                init_weight = module.weight.data.clone()
+                nn.init.kaiming_normal_(init_weight, mode='fan_out', nonlinearity='relu')
+                init_weight.mul_(1-mask)
+                # print(module.weight.data[0,0,0])
+                # print(init_weight[0,0,0])
+                module.weight.data.add_(init_weight)
+                # print(module.weight.data[0,0,0])
             if int(torch.sum(mask)) == 0:
                 zero_flag = True
             remain_ratio = int(torch.sum(mask)) / mask.numel()

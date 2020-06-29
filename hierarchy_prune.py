@@ -5,6 +5,7 @@ import time
 import argparse
 from pdb import set_trace as st
 import json
+import time
 import random
 
 import torch
@@ -17,6 +18,7 @@ import torchcontrib
 
 from torchvision import transforms
 from advertorch.attacks import LinfPGDAttack
+
 
 from dataset.cub200 import CUB200Data
 from dataset.mit67 import MIT67Data
@@ -33,7 +35,6 @@ from weight import prune as weight_prune
 
 from eval_robustness import advtest, myloss
 from utils import *
-
 
 def linear_l2(model):
     beta_loss = 0
@@ -67,15 +68,12 @@ def l2sp(model, reg):
 def test(model, teacher, loader, loss=False):
     with torch.no_grad():
         model.eval()
-
         if loss:
-            teacher.eval()
-
             ce = CrossEntropyLabelSmooth(loader.dataset.num_classes, args.label_smoothing).to('cuda')
             featloss = torch.nn.MSELoss(reduction='none')
 
         total_ce = 0
-        total_feat_reg = np.zeros(len(reg_layers))
+        total_feat_reg = 0
         total_l2sp_reg = 0
         total = 0
         top1 = 0
@@ -92,20 +90,7 @@ def test(model, teacher, loader, loss=False):
 
             if loss:
                 total_ce += ce(out, label).item()
-                if teacher is not None:
-                    with torch.no_grad():
-                        tout = teacher(batch)
 
-                    for key in reg_layers:
-                        src_x = reg_layers[key][0].out
-                        tgt_x = reg_layers[key][1].out
-
-                        regloss = featloss(src_x, tgt_x.detach()).mean()
-
-                        total_feat_reg[key] += regloss.item()
-
-                _, unweighted = l2sp(model, 0)
-                total_l2sp_reg += unweighted.item()
 
     return float(top1)/total*100, total_ce/(i+1), np.sum(total_feat_reg)/(i+1), total_l2sp_reg/(i+1), total_feat_reg/(i+1)
 
@@ -137,7 +122,6 @@ def train(
     else:
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, end_iter)
 
-    teacher.eval()
     ce = CrossEntropyLabelSmooth(train_loader.dataset.num_classes, args.label_smoothing).to('cuda')
     featloss = torch.nn.MSELoss()
 
@@ -187,11 +171,8 @@ def train(
 
         ce_loss_meter.update(loss.item())
 
-        with torch.no_grad():
-            tout = teacher(batch)
-
         # Compute the feature distillation loss only when needed
-        if args.feat_lmda != 0:
+        if args.feat_lmda > 0:
             regloss = 0
             for layer in args.feat_layers:
                 key = int(layer)-1
@@ -208,7 +189,7 @@ def train(
         loss = loss + beta_loss 
         linear_loss_meter.update(beta_loss.item())
 
-        if l2sp_lmda != 0:
+        if l2sp_lmda > 0:
             reg, _ = l2sp(model, l2sp_lmda)
             l2sp_loss_meter.update(reg.item())
             loss = loss + reg
@@ -287,6 +268,17 @@ def train(
                 )
                 torch.save({'state_dict': model.state_dict()}, ckpt_path)
 
+        if args.interval > 0 and i % args.interval == 0:
+            model = model.cpu()
+            model = weight_prune(
+                model, 
+                args.ratio,
+                mode=args.prune_mode,
+            )
+            model = model.cuda()
+
+            
+
     if args.swa:
         optimizer.swap_swa_sgd()
 
@@ -336,6 +328,7 @@ def train(
 
     return model
 
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--datapath", type=str, default='/data', help='path to the dataset')
@@ -372,11 +365,8 @@ def get_args():
     parser.add_argument("--ratio", default=0.3, type=float)
     parser.add_argument("--prune_mode", default="small", choices=["small", "large", "mid"])
     parser.add_argument("--train_all", default=False, action="store_true")
+    parser.add_argument("--interval", default=-1, type=int)
     args = parser.parse_args()
-    if args.feat_lmda > 0:
-        args.feat_lmda = -args.feat_lmda
-    if args.l2sp_lmda > 0:
-        args.feat_lmda = -args.l2sp_lmda
     return args
 
 # Used to matching features
@@ -456,13 +446,13 @@ if __name__ == '__main__':
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
-    
-    model = weight_prune(
-        model, 
-        args.ratio,
-        mode=args.prune_mode,
-    )
-    model = model.cuda()
+
+    # model = weight_prune(
+    #     model, 
+    #     args.ratio,
+    #     mode=args.prune_mode,
+    # )
+    # model = model.cuda()
 
     # Pre-trained model
     teacher = eval('{}_dropout'.format(args.network))(
@@ -470,47 +460,11 @@ if __name__ == '__main__':
         dropout=0, 
         num_classes=train_loader.dataset.num_classes
     ).cuda()
-    
-    if 'mbnetv2' in args.network:
-        reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4], 4: [model.layer5]}
-        model.layer1.register_forward_hook(record_act)
-        model.layer2.register_forward_hook(record_act)
-        model.layer3.register_forward_hook(record_act)
-        model.layer4.register_forward_hook(record_act)
-        model.layer5.register_forward_hook(record_act)
-    else:
-        reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4]}
-        model.layer1.register_forward_hook(record_act)
-        model.layer2.register_forward_hook(record_act)
-        model.layer3.register_forward_hook(record_act)
-        model.layer4.register_forward_hook(record_act)
-
-
-    # Stored pre-trained weights for computing L2SP
-    for m in model.modules():
-        if hasattr(m, 'weight') and not hasattr(m, 'old_weight'):
-            m.old_weight = m.weight.data.clone().detach()
-            # all_weights = torch.cat([all_weights.reshape(-1), m.weight.data.abs().reshape(-1)], dim=0)
-        if hasattr(m, 'bias') and not hasattr(m, 'old_bias') and m.bias is not None:
-            m.old_bias = m.bias.data.clone().detach()
 
     if args.reinit:
         for m in model.modules():
             if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
                 m.reset_parameters()
-
-    reg_layers[0].append(teacher.layer1)
-    teacher.layer1.register_forward_hook(record_act)
-    reg_layers[1].append(teacher.layer2)
-    teacher.layer2.register_forward_hook(record_act)
-    reg_layers[2].append(teacher.layer3)
-    teacher.layer3.register_forward_hook(record_act)
-    reg_layers[3].append(teacher.layer4)
-    teacher.layer4.register_forward_hook(record_act)
-
-    if '5' in args.feat_layers:
-        reg_layers[4].append(teacher.layer5)
-        teacher.layer5.register_forward_hook(record_act)
 
     model = train(
         model, 
@@ -520,8 +474,6 @@ if __name__ == '__main__':
         iterations=args.iterations, 
         lr=args.lr, 
         output_dir=args.output_dir, 
-        teacher=teacher, 
-        reg_layers=reg_layers,
         update_by_weight=not args.train_all,
     )
 
@@ -541,4 +493,3 @@ if __name__ == '__main__':
     result_sum = 'Clean Top-1: {:.2f} | Adv Top-1: {:.2f} | Attack Success Rate: {:.2f}'.format(clean_top1, adv_top1, adv_sr)
     with open(osp.join(args.output_dir, "posttrain_eval.txt"), "w") as f:
         f.write(result_sum)
-        

@@ -6,6 +6,7 @@ import argparse
 from pdb import set_trace as st
 import json
 import random
+from functools import partial
 
 import torch
 import numpy as np
@@ -29,11 +30,9 @@ from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropou
 from model.fe_mobilenet import mbnetv2_dropout
 from model.fe_resnet import feresnet18, feresnet50, feresnet101
 from model.fe_mobilenet import fembnetv2
-from weight import prune as weight_prune
 
 from eval_robustness import advtest, myloss
 from utils import *
-
 
 def linear_l2(model):
     beta_loss = 0
@@ -113,13 +112,13 @@ def train(
     model, 
     train_loader, 
     val_loader, 
+    adv_eval_fn,
     iterations=9000, 
     lr=1e-2, 
     output_dir='results', 
     l2sp_lmda=1e-2, 
     teacher=None, 
-    reg_layers={},
-    update_by_weight=False,
+    reg_layers={}
 ):
     model = model.to('cuda')
 
@@ -158,6 +157,10 @@ def train(
     test_path = osp.join(output_dir, "test.tsv")
     with open(test_path, 'w') as wf:
         columns = ['time', 'iter', 'Acc', 'celoss', 'featloss', 'l2sp']
+        wf.write('\t'.join(columns) + '\n')
+    adv_path = osp.join(output_dir, "adv.tsv")
+    with open(adv_path, 'w') as wf:
+        columns = ['time', 'iter', 'Acc', 'AdvAcc', 'ASR']
         wf.write('\t'.join(columns) + '\n')
     
     dataloader_iterator = iter(train_loader)
@@ -216,19 +219,6 @@ def train(
         total_loss_meter.update(loss.item())
 
         loss.backward()
-        #-----------------------------------------
-        if update_by_weight:
-            for k, m in enumerate(model.modules()):
-                # print(k, m)
-                if isinstance(m, nn.Conv2d):
-                    weight_copy = m.weight.data.abs().clone()
-                    mask = weight_copy.gt(0).float().cuda()
-                    m.weight.grad.data.mul_(mask)
-                if isinstance(m, nn.Linear):
-                    weight_copy = m.weight.data.abs().clone()
-                    mask = weight_copy.gt(0).float().cuda()
-                    m.weight.grad.data.mul_(mask)
-        #-----------------------------------------
         optimizer.step()
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
@@ -238,10 +228,9 @@ def train(
         batch_time.update(time.time() - end)
 
         if (i % args.print_freq == 0) or (i == iterations-1):
-            localtime = time.asctime( time.localtime(time.time()) )[:-6]
             progress = ProgressMeter(
                 iterations,
-                [localtime, batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
+                [batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
                 prefix="LR: {:6.3f}".format(current_lr),
                 output_dir=output_dir,
             )
@@ -254,6 +243,7 @@ def train(
             train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(
                 model, teacher, train_loader, loss=True
             )
+            
             print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
             print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
             localtime = time.asctime( time.localtime(time.time()) )[4:-6]
@@ -277,6 +267,7 @@ def train(
                     round(test_weight_loss,2),
                 ]
                 af.write('\t'.join([str(c) for c in test_cols]) + '\n')
+            
             if not args.no_save:
                 # if not os.path.exists('ckpt'):
                 #     os.makedirs('ckpt')
@@ -286,6 +277,19 @@ def train(
                     "ckpt.pth"
                 )
                 torch.save({'state_dict': model.state_dict()}, ckpt_path)
+
+        if args.adv_test_interval > 0 and ( (i % args.adv_test_interval == 0) or (i == iterations-1) ):
+            clean_top1, adv_top1, adv_sr = adv_eval_fn(model)
+            localtime = time.asctime( time.localtime(time.time()) )[4:-6]
+            with open(adv_path, 'a') as af:
+                test_cols = [
+                    localtime,
+                    i, 
+                    round(clean_top1,2),
+                    round(adv_top1,2),
+                    round(adv_sr,2),
+                ]
+                af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
     if args.swa:
         optimizer.swap_swa_sgd()
@@ -306,25 +310,43 @@ def train(
         train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(
             model, teacher, train_loader, loss=True
         )
+        clean_top1, adv_top1, adv_sr = adv_eval_fn(model)
         print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
         print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
+        localtime = time.asctime( time.localtime(time.time()) )[4:-6]
         with open(train_path, 'a') as af:
             train_cols = [
-                "swa",
+                localtime,
                 i, 
-                round(train_ce_loss,2), 
                 round(train_top1,2), 
+                round(train_ce_loss,2), 
+                round(train_feat_loss,2),
+                round(train_weight_loss,2),
             ]
             af.write('\t'.join([str(c) for c in train_cols]) + '\n')
         with open(test_path, 'a') as af:
             test_cols = [
-                "swa",
+                localtime,
                 i, 
-                round(test_ce_loss,2), 
                 round(test_top1,2), 
+                round(adv_top1,2),
+                round(adv_sr,2),
+                round(test_ce_loss,2), 
+                round(test_feat_loss,2),
+                round(test_weight_loss,2),
             ]
             af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-
+        clean_top1, adv_top1, adv_sr = adv_eval_fn(model)
+        localtime = time.asctime( time.localtime(time.time()) )[4:-6]
+        with open(adv_path, 'a') as af:
+            test_cols = [
+                localtime,
+                i, 
+                round(clean_top1,2),
+                round(adv_top1,2),
+                round(adv_sr,2),
+            ]
+            af.write('\t'.join([str(c) for c in test_cols]) + '\n')
         if not args.no_save:
             # if not os.path.exists('ckpt'):
             #     os.makedirs('ckpt')
@@ -343,6 +365,7 @@ def get_args():
     parser.add_argument("--iterations", type=int, default=30000, help='Iterations to train')
     parser.add_argument("--print_freq", type=int, default=100, help='Frequency of printing training logs')
     parser.add_argument("--test_interval", type=int, default=1000, help='Frequency of testing')
+    parser.add_argument("--adv_test_interval", type=int, default=1000)
     parser.add_argument("--name", type=str, default='test', help='Name for the checkpoint')
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-2)
@@ -368,15 +391,7 @@ def get_args():
     parser.add_argument("--B", type=float, default=0.1, help='Attack budget')
     parser.add_argument("--m", type=float, default=1000, help='Hyper-parameter for task-agnostic attack')
     parser.add_argument("--pgd_iter", type=int, default=40)
-    parser.add_argument("--method", default="weight")
-    parser.add_argument("--ratio", default=0.3, type=float)
-    parser.add_argument("--prune_mode", default="small", choices=["small", "large", "mid"])
-    parser.add_argument("--train_all", default=False, action="store_true")
     args = parser.parse_args()
-    if args.feat_lmda > 0:
-        args.feat_lmda = -args.feat_lmda
-    if args.l2sp_lmda > 0:
-        args.feat_lmda = -args.l2sp_lmda
     return args
 
 # Used to matching features
@@ -452,17 +467,10 @@ if __name__ == '__main__':
         pretrained=True, 
         dropout=args.dropout, 
         num_classes=train_loader.dataset.num_classes
-    )
+    ).cuda()
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
-    
-    model = weight_prune(
-        model, 
-        args.ratio,
-        mode=args.prune_mode,
-    )
-    model = model.cuda()
 
     # Pre-trained model
     teacher = eval('{}_dropout'.format(args.network))(
@@ -470,7 +478,7 @@ if __name__ == '__main__':
         dropout=0, 
         num_classes=train_loader.dataset.num_classes
     ).cuda()
-    
+
     if 'mbnetv2' in args.network:
         reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4], 4: [model.layer5]}
         model.layer1.register_forward_hook(record_act)
@@ -512,17 +520,35 @@ if __name__ == '__main__':
         reg_layers[4].append(teacher.layer5)
         teacher.layer5.register_forward_hook(record_act)
 
-    model = train(
+    eval_pretrained_model = eval('fe{}'.format(args.network))(pretrained=True).cuda().eval()
+    adversary = LinfPGDAttack(
+            eval_pretrained_model, loss_fn=myloss, eps=args.B,
+            nb_iter=args.pgd_iter, eps_iter=0.01, 
+            rand_init=True, clip_min=-2.2, clip_max=2.2,
+            targeted=False)
+    adveval_test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=8, shuffle=False,
+        num_workers=8, pin_memory=False
+    )
+    adv_eval_fn = partial(
+        advtest,
+        loader=adveval_test_loader,
+        adversary=adversary,
+        args=args,
+    )
+
+    train(
         model, 
         train_loader, 
         test_loader, 
+        adv_eval_fn,
         l2sp_lmda=args.l2sp_lmda, 
         iterations=args.iterations, 
         lr=args.lr, 
         output_dir=args.output_dir, 
         teacher=teacher, 
         reg_layers=reg_layers,
-        update_by_weight=not args.train_all,
     )
 
     # Evaluate
@@ -541,4 +567,3 @@ if __name__ == '__main__':
     result_sum = 'Clean Top-1: {:.2f} | Adv Top-1: {:.2f} | Attack Success Rate: {:.2f}'.format(clean_top1, adv_top1, adv_sr)
     with open(osp.join(args.output_dir, "posttrain_eval.txt"), "w") as f:
         f.write(result_sum)
-        

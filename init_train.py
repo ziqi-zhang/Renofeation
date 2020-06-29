@@ -16,7 +16,6 @@ import torch.optim as optim
 import torchcontrib
 
 from torchvision import transforms
-from advertorch.attacks import LinfPGDAttack
 
 from dataset.cub200 import CUB200Data
 from dataset.mit67 import MIT67Data
@@ -27,13 +26,57 @@ from dataset.flower102 import Flower102Data
 
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
-from model.fe_resnet import feresnet18, feresnet50, feresnet101
-from model.fe_mobilenet import fembnetv2
-from weight import prune as weight_prune
 
-from eval_robustness import advtest, myloss
-from utils import *
+class MovingAverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self, name, fmt=':f', momentum=0.9):
+        self.name = name
+        self.fmt = fmt
+        self.momentum = momentum
+        self.reset()
 
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.avg = self.momentum*self.avg + (1-self.momentum)*val
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
+
+class ProgressMeter(object):
+    def __init__(self, num_batches, meters, prefix=""):
+        self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
+        self.meters = meters
+        self.prefix = prefix
+
+    def display(self, batch):
+        entries = [self.prefix + self.batch_fmtstr.format(batch)]
+        entries += [str(meter) for meter in self.meters]
+        print('\t'.join(entries))
+
+    def _get_batch_fmtstr(self, num_batches):
+        num_digits = len(str(num_batches // 1))
+        fmt = '{:' + str(num_digits) + 'd}'
+        return '[' + fmt + '/' + fmt.format(num_batches) + ']'
+    
+class CrossEntropyLabelSmooth(nn.Module):
+    def __init__(self, num_classes, epsilon = 0.1):
+        super(CrossEntropyLabelSmooth, self).__init__()
+        self.num_classes = num_classes
+        self.epsilon = epsilon
+        self.logsoftmax = nn.LogSoftmax(dim=1)
+
+    def forward(self, inputs, targets):
+        log_probs = self.logsoftmax(inputs)
+        targets = torch.zeros_like(log_probs).scatter_(1, targets.unsqueeze(1), 1)
+        targets = (1 - self.epsilon) * targets + self.epsilon / self.num_classes
+        loss = (-targets * log_probs).sum(1)
+        return loss.mean()
 
 def linear_l2(model):
     beta_loss = 0
@@ -118,8 +161,7 @@ def train(
     output_dir='results', 
     l2sp_lmda=1e-2, 
     teacher=None, 
-    reg_layers={},
-    update_by_weight=False,
+    reg_layers={}
 ):
     model = model.to('cuda')
 
@@ -153,11 +195,11 @@ def train(
 
     train_path = osp.join(output_dir, "train.tsv")
     with open(train_path, 'w') as wf:
-        columns = ['time', 'iter', 'Acc', 'celoss', 'featloss', 'l2sp']
+        columns = ['iter', 'loss', 'Acc']
         wf.write('\t'.join(columns) + '\n')
     test_path = osp.join(output_dir, "test.tsv")
     with open(test_path, 'w') as wf:
-        columns = ['time', 'iter', 'Acc', 'celoss', 'featloss', 'l2sp']
+        columns = ['iter', 'loss', 'Acc']
         wf.write('\t'.join(columns) + '\n')
     
     dataloader_iterator = iter(train_loader)
@@ -191,7 +233,7 @@ def train(
             tout = teacher(batch)
 
         # Compute the feature distillation loss only when needed
-        if args.feat_lmda != 0:
+        if args.feat_lmda > 0:
             regloss = 0
             for layer in args.feat_layers:
                 key = int(layer)-1
@@ -208,7 +250,7 @@ def train(
         loss = loss + beta_loss 
         linear_loss_meter.update(beta_loss.item())
 
-        if l2sp_lmda != 0:
+        if l2sp_lmda > 0:
             reg, _ = l2sp(model, l2sp_lmda)
             l2sp_loss_meter.update(reg.item())
             loss = loss + reg
@@ -216,19 +258,6 @@ def train(
         total_loss_meter.update(loss.item())
 
         loss.backward()
-        #-----------------------------------------
-        if update_by_weight:
-            for k, m in enumerate(model.modules()):
-                # print(k, m)
-                if isinstance(m, nn.Conv2d):
-                    weight_copy = m.weight.data.abs().clone()
-                    mask = weight_copy.gt(0).float().cuda()
-                    m.weight.grad.data.mul_(mask)
-                if isinstance(m, nn.Linear):
-                    weight_copy = m.weight.data.abs().clone()
-                    mask = weight_copy.gt(0).float().cuda()
-                    m.weight.grad.data.mul_(mask)
-        #-----------------------------------------
         optimizer.step()
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
@@ -238,13 +267,10 @@ def train(
         batch_time.update(time.time() - end)
 
         if (i % args.print_freq == 0) or (i == iterations-1):
-            localtime = time.asctime( time.localtime(time.time()) )[:-6]
             progress = ProgressMeter(
                 iterations,
-                [localtime, batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
-                prefix="LR: {:6.3f}".format(current_lr),
-                output_dir=output_dir,
-            )
+                [batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
+                prefix="LR: {:6.3f}".format(current_lr))
             progress.display(i)
 
         if (i % args.test_interval == 0) or (i == iterations-1):
@@ -256,25 +282,18 @@ def train(
             )
             print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
             print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
-            localtime = time.asctime( time.localtime(time.time()) )[4:-6]
             with open(train_path, 'a') as af:
                 train_cols = [
-                    localtime,
                     i, 
-                    round(train_top1,2), 
                     round(train_ce_loss,2), 
-                    round(train_feat_loss,2),
-                    round(train_weight_loss,2),
+                    round(train_top1,2), 
                 ]
                 af.write('\t'.join([str(c) for c in train_cols]) + '\n')
             with open(test_path, 'a') as af:
                 test_cols = [
-                    localtime,
                     i, 
-                    round(test_top1,2), 
                     round(test_ce_loss,2), 
-                    round(test_feat_loss,2),
-                    round(test_weight_loss,2),
+                    round(test_top1,2), 
                 ]
                 af.write('\t'.join([str(c) for c in test_cols]) + '\n')
             if not args.no_save:
@@ -288,6 +307,7 @@ def train(
                 torch.save({'state_dict': model.state_dict()}, ckpt_path)
 
     if args.swa:
+        raise NotImplementedError
         optimizer.swap_swa_sgd()
 
         for m in model.modules():
@@ -300,30 +320,10 @@ def train(
                 x = x.to('cuda')
                 out = model(x)
 
-        test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = test(
-            model, teacher, val_loader, loss=True
-        )
-        train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(
-            model, teacher, train_loader, loss=True
-        )
+        test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = test(model, teacher, val_loader, loss=True)
+        train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(model, teacher, train_loader, loss=True)
         print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
         print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
-        with open(train_path, 'a') as af:
-            train_cols = [
-                "swa",
-                i, 
-                round(train_ce_loss,2), 
-                round(train_top1,2), 
-            ]
-            af.write('\t'.join([str(c) for c in train_cols]) + '\n')
-        with open(test_path, 'a') as af:
-            test_cols = [
-                "swa",
-                i, 
-                round(test_ce_loss,2), 
-                round(test_top1,2), 
-            ]
-            af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
         if not args.no_save:
             # if not os.path.exists('ckpt'):
@@ -365,18 +365,7 @@ def get_args():
     parser.add_argument("--shot", type=int, default=-1, help='Number of training samples per class for the training dataset. -1 indicates using the full dataset.')
     parser.add_argument("--log", action='store_true', default=False, help='Redirect the output to log/args.name.log')
     parser.add_argument("--output_dir", default="results")
-    parser.add_argument("--B", type=float, default=0.1, help='Attack budget')
-    parser.add_argument("--m", type=float, default=1000, help='Hyper-parameter for task-agnostic attack')
-    parser.add_argument("--pgd_iter", type=int, default=40)
-    parser.add_argument("--method", default="weight")
-    parser.add_argument("--ratio", default=0.3, type=float)
-    parser.add_argument("--prune_mode", default="small", choices=["small", "large", "mid"])
-    parser.add_argument("--train_all", default=False, action="store_true")
     args = parser.parse_args()
-    if args.feat_lmda > 0:
-        args.feat_lmda = -args.feat_lmda
-    if args.l2sp_lmda > 0:
-        args.feat_lmda = -args.l2sp_lmda
     return args
 
 # Used to matching features
@@ -390,7 +379,7 @@ if __name__ == '__main__':
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
+    
     args = get_args()
     
     if args.log:
@@ -452,17 +441,10 @@ if __name__ == '__main__':
         pretrained=True, 
         dropout=args.dropout, 
         num_classes=train_loader.dataset.num_classes
-    )
+    ).cuda()
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
-    
-    model = weight_prune(
-        model, 
-        args.ratio,
-        mode=args.prune_mode,
-    )
-    model = model.cuda()
 
     # Pre-trained model
     teacher = eval('{}_dropout'.format(args.network))(
@@ -470,7 +452,7 @@ if __name__ == '__main__':
         dropout=0, 
         num_classes=train_loader.dataset.num_classes
     ).cuda()
-    
+
     if 'mbnetv2' in args.network:
         reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4], 4: [model.layer5]}
         model.layer1.register_forward_hook(record_act)
@@ -512,7 +494,7 @@ if __name__ == '__main__':
         reg_layers[4].append(teacher.layer5)
         teacher.layer5.register_forward_hook(record_act)
 
-    model = train(
+    train(
         model, 
         train_loader, 
         test_loader, 
@@ -521,24 +503,5 @@ if __name__ == '__main__':
         lr=args.lr, 
         output_dir=args.output_dir, 
         teacher=teacher, 
-        reg_layers=reg_layers,
-        update_by_weight=not args.train_all,
+        reg_layers=reg_layers
     )
-
-    # Evaluate
-    pretrained_model = eval('fe{}'.format(args.network))(pretrained=True).cuda().eval()
-    adversary = LinfPGDAttack(
-            pretrained_model, loss_fn=myloss, eps=args.B,
-            nb_iter=args.pgd_iter, eps_iter=0.01, 
-            rand_init=True, clip_min=-2.2, clip_max=2.2,
-            targeted=False)
-    test_loader = torch.utils.data.DataLoader(
-        test_set,
-        batch_size=8, shuffle=False,
-        num_workers=8, pin_memory=False
-    )
-    clean_top1, adv_top1, adv_sr = advtest(model, test_loader, adversary, args)
-    result_sum = 'Clean Top-1: {:.2f} | Adv Top-1: {:.2f} | Attack Success Rate: {:.2f}'.format(clean_top1, adv_top1, adv_sr)
-    with open(osp.join(args.output_dir, "posttrain_eval.txt"), "w") as f:
-        f.write(result_sum)
-        

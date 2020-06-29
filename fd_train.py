@@ -29,11 +29,9 @@ from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropou
 from model.fe_mobilenet import mbnetv2_dropout
 from model.fe_resnet import feresnet18, feresnet50, feresnet101
 from model.fe_mobilenet import fembnetv2
-from weight import prune as weight_prune
 
 from eval_robustness import advtest, myloss
 from utils import *
-
 
 def linear_l2(model):
     beta_loss = 0
@@ -118,8 +116,7 @@ def train(
     output_dir='results', 
     l2sp_lmda=1e-2, 
     teacher=None, 
-    reg_layers={},
-    update_by_weight=False,
+    reg_layers={}
 ):
     model = model.to('cuda')
 
@@ -216,19 +213,6 @@ def train(
         total_loss_meter.update(loss.item())
 
         loss.backward()
-        #-----------------------------------------
-        if update_by_weight:
-            for k, m in enumerate(model.modules()):
-                # print(k, m)
-                if isinstance(m, nn.Conv2d):
-                    weight_copy = m.weight.data.abs().clone()
-                    mask = weight_copy.gt(0).float().cuda()
-                    m.weight.grad.data.mul_(mask)
-                if isinstance(m, nn.Linear):
-                    weight_copy = m.weight.data.abs().clone()
-                    mask = weight_copy.gt(0).float().cuda()
-                    m.weight.grad.data.mul_(mask)
-        #-----------------------------------------
         optimizer.step()
         for param_group in optimizer.param_groups:
             current_lr = param_group['lr']
@@ -238,10 +222,9 @@ def train(
         batch_time.update(time.time() - end)
 
         if (i % args.print_freq == 0) or (i == iterations-1):
-            localtime = time.asctime( time.localtime(time.time()) )[:-6]
             progress = ProgressMeter(
                 iterations,
-                [localtime, batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
+                [batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
                 prefix="LR: {:6.3f}".format(current_lr),
                 output_dir=output_dir,
             )
@@ -368,15 +351,11 @@ def get_args():
     parser.add_argument("--B", type=float, default=0.1, help='Attack budget')
     parser.add_argument("--m", type=float, default=1000, help='Hyper-parameter for task-agnostic attack')
     parser.add_argument("--pgd_iter", type=int, default=40)
-    parser.add_argument("--method", default="weight")
-    parser.add_argument("--ratio", default=0.3, type=float)
-    parser.add_argument("--prune_mode", default="small", choices=["small", "large", "mid"])
-    parser.add_argument("--train_all", default=False, action="store_true")
     args = parser.parse_args()
     if args.feat_lmda > 0:
         args.feat_lmda = -args.feat_lmda
     if args.l2sp_lmda > 0:
-        args.feat_lmda = -args.l2sp_lmda
+        args.l2sp_lmda = -args.l2sp_lmda
     return args
 
 # Used to matching features
@@ -452,17 +431,10 @@ if __name__ == '__main__':
         pretrained=True, 
         dropout=args.dropout, 
         num_classes=train_loader.dataset.num_classes
-    )
+    ).cuda()
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
-    
-    model = weight_prune(
-        model, 
-        args.ratio,
-        mode=args.prune_mode,
-    )
-    model = model.cuda()
 
     # Pre-trained model
     teacher = eval('{}_dropout'.format(args.network))(
@@ -470,7 +442,7 @@ if __name__ == '__main__':
         dropout=0, 
         num_classes=train_loader.dataset.num_classes
     ).cuda()
-    
+
     if 'mbnetv2' in args.network:
         reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4], 4: [model.layer5]}
         model.layer1.register_forward_hook(record_act)
@@ -512,7 +484,7 @@ if __name__ == '__main__':
         reg_layers[4].append(teacher.layer5)
         teacher.layer5.register_forward_hook(record_act)
 
-    model = train(
+    train(
         model, 
         train_loader, 
         test_loader, 
@@ -521,8 +493,7 @@ if __name__ == '__main__':
         lr=args.lr, 
         output_dir=args.output_dir, 
         teacher=teacher, 
-        reg_layers=reg_layers,
-        update_by_weight=not args.train_all,
+        reg_layers=reg_layers
     )
 
     # Evaluate
@@ -541,4 +512,3 @@ if __name__ == '__main__':
     result_sum = 'Clean Top-1: {:.2f} | Adv Top-1: {:.2f} | Attack Success Rate: {:.2f}'.format(clean_top1, adv_top1, adv_sr)
     with open(osp.join(args.output_dir, "posttrain_eval.txt"), "w") as f:
         f.write(result_sum)
-        

@@ -5,6 +5,8 @@ import time
 import argparse
 from pdb import set_trace as st
 import json
+import time
+import random
 
 import torch
 import numpy as np
@@ -23,7 +25,7 @@ from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
 
-from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
+from model.fe_resnet import resnet18_dropout, resnet34_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
 
 class MovingAverageMeter(object):
@@ -105,19 +107,15 @@ def l2sp(model, reg):
     loss = (reg * reg_loss)
     return loss, dist
 
-
 def test(model, teacher, loader, loss=False):
     with torch.no_grad():
         model.eval()
-
         if loss:
-            teacher.eval()
-
             ce = CrossEntropyLabelSmooth(loader.dataset.num_classes, args.label_smoothing).to('cuda')
             featloss = torch.nn.MSELoss(reduction='none')
 
         total_ce = 0
-        total_feat_reg = np.zeros(len(reg_layers))
+        total_feat_reg = 0
         total_l2sp_reg = 0
         total = 0
         top1 = 0
@@ -134,20 +132,7 @@ def test(model, teacher, loader, loss=False):
 
             if loss:
                 total_ce += ce(out, label).item()
-                if teacher is not None:
-                    with torch.no_grad():
-                        tout = teacher(batch)
 
-                    for key in reg_layers:
-                        src_x = reg_layers[key][0].out
-                        tgt_x = reg_layers[key][1].out
-
-                        regloss = featloss(src_x, tgt_x.detach()).mean()
-
-                        total_feat_reg[key] += regloss.item()
-
-                _, unweighted = l2sp(model, 0)
-                total_l2sp_reg += unweighted.item()
 
     return float(top1)/total*100, total_ce/(i+1), np.sum(total_feat_reg)/(i+1), total_l2sp_reg/(i+1), total_feat_reg/(i+1)
 
@@ -178,7 +163,8 @@ def train(
     else:
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, end_iter)
 
-    teacher.eval()
+    if teacher is not None:
+        teacher.eval()
     ce = CrossEntropyLabelSmooth(train_loader.dataset.num_classes, args.label_smoothing).to('cuda')
     featloss = torch.nn.MSELoss()
 
@@ -194,11 +180,11 @@ def train(
 
     train_path = osp.join(output_dir, "train.tsv")
     with open(train_path, 'w') as wf:
-        columns = ['iter', 'loss', 'Acc']
+        columns = ['time', 'iter', 'loss', 'Acc']
         wf.write('\t'.join(columns) + '\n')
     test_path = osp.join(output_dir, "test.tsv")
     with open(test_path, 'w') as wf:
-        columns = ['iter', 'loss', 'Acc']
+        columns = ['time', 'iter', 'loss', 'Acc']
         wf.write('\t'.join(columns) + '\n')
     
     dataloader_iterator = iter(train_loader)
@@ -228,8 +214,9 @@ def train(
 
         ce_loss_meter.update(loss.item())
 
-        with torch.no_grad():
-            tout = teacher(batch)
+        if teacher is not None:
+            with torch.no_grad():
+                tout = teacher(batch)
 
         # Compute the feature distillation loss only when needed
         if args.feat_lmda > 0:
@@ -281,8 +268,10 @@ def train(
             )
             print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
             print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
+            localtime = time.asctime( time.localtime(time.time()) )[4:-6]
             with open(train_path, 'a') as af:
                 train_cols = [
+                    localtime,
                     i, 
                     round(train_ce_loss,2), 
                     round(train_top1,2), 
@@ -290,6 +279,7 @@ def train(
                 af.write('\t'.join([str(c) for c in train_cols]) + '\n')
             with open(test_path, 'a') as af:
                 test_cols = [
+                    localtime,
                     i, 
                     round(test_ce_loss,2), 
                     round(test_top1,2), 
@@ -306,7 +296,6 @@ def train(
                 torch.save({'state_dict': model.state_dict()}, ckpt_path)
 
     if args.swa:
-        raise NotImplementedError
         optimizer.swap_swa_sgd()
 
         for m in model.modules():
@@ -319,10 +308,30 @@ def train(
                 x = x.to('cuda')
                 out = model(x)
 
-        test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = test(model, teacher, val_loader, loss=True)
-        train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(model, teacher, train_loader, loss=True)
+        test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = test(
+            model, teacher, val_loader, loss=True
+        )
+        train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(
+            model, teacher, train_loader, loss=True
+        )
         print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
         print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
+        with open(train_path, 'a') as af:
+            train_cols = [
+                "swa",
+                i, 
+                round(train_ce_loss,2), 
+                round(train_top1,2), 
+            ]
+            af.write('\t'.join([str(c) for c in train_cols]) + '\n')
+        with open(test_path, 'a') as af:
+            test_cols = [
+                "swa",
+                i, 
+                round(test_ce_loss,2), 
+                round(test_top1,2), 
+            ]
+            af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
         if not args.no_save:
             # if not os.path.exists('ckpt'):
@@ -372,6 +381,13 @@ def record_act(self, input, output):
     self.out = output
 
 if __name__ == '__main__':
+    seed = 98
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
     args = get_args()
     
     if args.log:
@@ -428,7 +444,7 @@ if __name__ == '__main__':
         batch_size=args.batch_size, shuffle=False,
         num_workers=8, pin_memory=False
     )
-
+    
     model = eval('{}_dropout'.format(args.network))(
         pretrained=True, 
         dropout=args.dropout, 
@@ -438,55 +454,13 @@ if __name__ == '__main__':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['state_dict'])
 
-    # Pre-trained model
-    teacher = eval('{}_dropout'.format(args.network))(
-        pretrained=True, 
-        dropout=0, 
-        num_classes=train_loader.dataset.num_classes
-    ).cuda()
-
-    if 'mbnetv2' in args.network:
-        reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4], 4: [model.layer5]}
-        model.layer1.register_forward_hook(record_act)
-        model.layer2.register_forward_hook(record_act)
-        model.layer3.register_forward_hook(record_act)
-        model.layer4.register_forward_hook(record_act)
-        model.layer5.register_forward_hook(record_act)
-    else:
-        reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4]}
-        model.layer1.register_forward_hook(record_act)
-        model.layer2.register_forward_hook(record_act)
-        model.layer3.register_forward_hook(record_act)
-        model.layer4.register_forward_hook(record_act)
-
-
-    # Stored pre-trained weights for computing L2SP
-    for m in model.modules():
-        if hasattr(m, 'weight') and not hasattr(m, 'old_weight'):
-            m.old_weight = m.weight.data.clone().detach()
-            # all_weights = torch.cat([all_weights.reshape(-1), m.weight.data.abs().reshape(-1)], dim=0)
-        if hasattr(m, 'bias') and not hasattr(m, 'old_bias') and m.bias is not None:
-            m.old_bias = m.bias.data.clone().detach()
-
     if args.reinit:
         for m in model.modules():
             if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
                 m.reset_parameters()
 
-    reg_layers[0].append(teacher.layer1)
-    teacher.layer1.register_forward_hook(record_act)
-    reg_layers[1].append(teacher.layer2)
-    teacher.layer2.register_forward_hook(record_act)
-    reg_layers[2].append(teacher.layer3)
-    teacher.layer3.register_forward_hook(record_act)
-    reg_layers[3].append(teacher.layer4)
-    teacher.layer4.register_forward_hook(record_act)
 
-    if '5' in args.feat_layers:
-        reg_layers[4].append(teacher.layer5)
-        teacher.layer5.register_forward_hook(record_act)
-
-    train(
+    model = train(
         model, 
         train_loader, 
         test_loader, 
@@ -494,6 +468,4 @@ if __name__ == '__main__':
         iterations=args.iterations, 
         lr=args.lr, 
         output_dir=args.output_dir, 
-        teacher=teacher, 
-        reg_layers=reg_layers
     )

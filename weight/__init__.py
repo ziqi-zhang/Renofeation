@@ -52,6 +52,8 @@ def reinit_model(
 def prune( 
     model,
     prune_ratio,
+    mode="small",
+    kaiming_init=False,
 ):
     if isinstance(model, model_lib.fe_resnet.ResNet):
         if len(model.layer1) == 2:
@@ -59,6 +61,8 @@ def prune(
             model = weight_prune.weight_prune_all(
                 model,
                 prune_ratio,
+                mode=mode,
+                kaiming_init=kaiming_init,
             )
             return model
         elif len(model.layer1) == 3:
