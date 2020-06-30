@@ -75,24 +75,14 @@ class GlobalDatasetGradOptimIter(Finetuner):
                 module.raw_weight = module.weight.clone()
         
         
-        # optimizer = optim.SGD(
-        #     self.model.parameters(), 
-        #     lr=self.args.lr, 
-        #     momentum=0.9, 
-        #     weight_decay=0,
-        # )
+
         optimizer = optim.SGD(
             self.model.parameters(), 
             lr=self.args.trial_lr, 
             momentum=self.args.trial_momentum, 
             weight_decay=self.args.trial_weight_decay,
         )
-        # optimizer = optim.SGD(
-        #     self.model.parameters(), 
-        #     lr=self.args.lr, 
-        #     momentum=self.args.momentum, 
-        #     weight_decay=self.args.weight_decay,
-        # )
+
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
 

@@ -60,22 +60,22 @@ class ForwardBackwardGrad(GlobalDatasetGradOptimIter):
         
         optimizer = optim.SGD(
             self.model.parameters(), 
-            lr=self.args.lr, 
-            momentum=self.args.momentum, 
-            weight_decay=self.args.weight_decay,
+            lr=self.args.trial_lr, 
+            momentum=self.args.trial_momentum, 
+            weight_decay=self.args.trial_weight_decay,
         )
 
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
 
         preprocess_path = osp.join(
-            self.args.family_output_dir,
+            self.args.output_dir,
             "preprocess"
         )
         preprocess_file = open(preprocess_path, "w")
         
         dataloader_iterator = iter(self.train_loader)
-        for iteration in range(1000):
+        for iteration in range(self.args.trial_iteration):
             self.model.train()
             try:
                 batch, label = next(dataloader_iterator)
@@ -102,7 +102,7 @@ class ForwardBackwardGrad(GlobalDatasetGradOptimIter):
         preprocess_file.close()
             
         ckpt_path = osp.join(
-            self.args.family_output_dir,
+            self.args.output_dir,
             "finetune.pth"
         )
         torch.save(
@@ -128,14 +128,15 @@ class ForwardBackwardGrad(GlobalDatasetGradOptimIter):
         
         output_avg = outputs.mean(0).cuda()
         
-        dataloader_iterator = iter(self.train_loader)
-        for iteration in range(1000):
-            try:
-                batch, label = next(dataloader_iterator)
-            except:
-                break
-                dataloader_iterator = iter(self.train_loader)
-                batch, label = next(dataloader_iterator)
+        # dataloader_iterator = iter(self.train_loader)
+        # for iteration in range(1000):
+        #     try:
+        #         batch, label = next(dataloader_iterator)
+        #     except:
+        #         break
+        #         dataloader_iterator = iter(self.train_loader)
+        #         batch, label = next(dataloader_iterator)
+        for batch, label in self.train_loader:
             batch, label = batch.cuda(), label.cuda()
             output = self.model(batch).mean(0)
 
@@ -156,7 +157,7 @@ class ForwardBackwardGrad(GlobalDatasetGradOptimIter):
         
         self.forward_train()
         ckpt_path = osp.join(
-            self.args.family_output_dir,
+            self.args.output_dir,
             "finetune.pth"
         )
         ckpt = torch.load(ckpt_path)
