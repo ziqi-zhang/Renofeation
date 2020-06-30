@@ -37,10 +37,9 @@ from model.fe_mobilenet import fembnetv2
 from eval_robustness import advtest, myloss
 from utils import *
 from fineprune.finetuner import Finetuner
-from fineprune.dataset_grad_optim import DatasetGradOptim
 
 
-class GlobalDatasetGradOptimIter(DatasetGradOptim):
+class GlobalDatasetGradOptimIter(Finetuner):
     def __init__(
         self,
         args,
@@ -52,6 +51,19 @@ class GlobalDatasetGradOptimIter(DatasetGradOptim):
         super(GlobalDatasetGradOptimIter, self).__init__(
             args, model, teacher, train_loader, test_loader
         )
+        assert (
+            self.args.weight_total_ratio >= 0 and
+            self.args.weight_ratio_per_prune >= 0 and 
+            self.args.prune_interval >= 0 and 
+            self.args.weight_init_prune_ratio >= 0 and
+            self.args.weight_total_ratio >= self.args.weight_init_prune_ratio
+        )
+        
+        self.log_path = osp.join(self.args.output_dir, "prune.log")
+        self.logger = open(self.log_path, "w")
+        self.init_prune()
+        self.logger.close()
+
 
     def process_epoch(self):
         print(f"Processing one epoch...")
@@ -63,12 +75,24 @@ class GlobalDatasetGradOptimIter(DatasetGradOptim):
                 module.raw_weight = module.weight.clone()
         
         
+        # optimizer = optim.SGD(
+        #     self.model.parameters(), 
+        #     lr=self.args.lr, 
+        #     momentum=0.9, 
+        #     weight_decay=0,
+        # )
         optimizer = optim.SGD(
             self.model.parameters(), 
-            lr=self.args.lr, 
-            momentum=0.9, 
-            weight_decay=0,
+            lr=self.args.trial_lr, 
+            momentum=self.args.trial_momentum, 
+            weight_decay=self.args.trial_weight_decay,
         )
+        # optimizer = optim.SGD(
+        #     self.model.parameters(), 
+        #     lr=self.args.lr, 
+        #     momentum=self.args.momentum, 
+        #     weight_decay=self.args.weight_decay,
+        # )
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
 
@@ -79,7 +103,7 @@ class GlobalDatasetGradOptimIter(DatasetGradOptim):
         preprocess_file = open(preprocess_path, "w")
 
         dataloader_iterator = iter(self.train_loader)
-        for iteration in range(3000):
+        for iteration in range(self.args.trial_iteration):
             self.model.train()
             try:
                 batch, label = next(dataloader_iterator)
@@ -98,7 +122,7 @@ class GlobalDatasetGradOptimIter(DatasetGradOptim):
             # break
             if (iteration+1) % 300 == 0:
                 test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = self.test()
-                test_log = f"Pretrain iter {iteration} | Top-1: {test_top1:.2f}"
+                test_log = f"Pretrain iter {iteration} | Top-1: {test_top1:.2f}\n"
                 print(test_log)
                 preprocess_file.write(test_log)
 
@@ -112,7 +136,17 @@ class GlobalDatasetGradOptimIter(DatasetGradOptim):
         self.model.zero_grad()
         self.model.load_state_dict(state_dict)
 
-        
+
+    def normalize_ranks(self):
+        for name, module in self.model.named_modules():
+            if ( isinstance(module, nn.Conv2d) ):
+                module.grad_log = torch.abs(module.grad)
+                # shape = taylor.shape
+                # taylor = taylor.view(-1)
+                # taylor = taylor.type(torch.FloatTensor)
+                # taylor = taylor / np.sqrt(torch.sum(taylor * taylor))
+                # taylor = taylor.reshape(shape)
+                # module.grad_log = taylor
 
     def conduct_prune(
             self,
@@ -168,3 +202,41 @@ class GlobalDatasetGradOptimIter(DatasetGradOptim):
         f"Pruned ratio: {pruned/total:.2f}")
         self.prune_record(log)
         self.model = model.cuda()
+
+    def snip_weight_prune(self, prune_ratio, iteration):
+        self.prune_record(
+            f"Iter {iteration} prune {prune_ratio} weights"
+        )
+
+        self.process_epoch()
+        # self.normalize_ranks()
+        self.conduct_prune(prune_ratio)
+
+
+    def prune_record(self, log):
+        print(log)
+        self.logger.write(log+"\n")
+
+    def check_param_num(self):
+        model = self.model        
+        total = sum([module.weight.nelement() for module in model.modules() if isinstance(module, nn.Conv2d) ])
+        num = total
+        for m in model.modules():
+            if ( isinstance(m, nn.Conv2d) ):
+                num -= int((m.weight.data == 0).sum())
+        ratio = (total - num) / total
+        log = f"===>Check weight: Total {total}, current {num}, prune ratio {ratio:2f}"
+        self.prune_record(log)
+
+    def init_prune(self):
+        ratio = self.args.weight_init_prune_ratio
+        self.prune_record(f"Init prune {ratio} weights")
+        self.snip_weight_prune(ratio, 0)
+        self.check_param_num()
+
+
+    def final_check_param_num(self):
+        self.logger = open(self.log_path, "a")
+        self.check_param_num()
+        self.logger.close()
+        

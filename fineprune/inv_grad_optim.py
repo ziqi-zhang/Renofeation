@@ -37,10 +37,10 @@ from model.fe_mobilenet import fembnetv2
 from eval_robustness import advtest, myloss
 from utils import *
 from fineprune.finetuner import Finetuner
-from fineprune.dataset_grad_optim import DatasetGradOptim
+from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
 
 
-class InvGradOptim(DatasetGradOptim):
+class InvGradOptim(GlobalDatasetGradOptimIter):
     def __init__(
         self,
         args,
@@ -49,7 +49,7 @@ class InvGradOptim(DatasetGradOptim):
         train_loader,
         test_loader,
     ):
-        super(InvGrad, self).__init__(
+        super(InvGradOptim, self).__init__(
             args, model, teacher, train_loader, test_loader
         )
 
@@ -57,7 +57,7 @@ class InvGradOptim(DatasetGradOptim):
     
     def forward_train(self):
         print(f"Preprocessing one epoch...")
-        
+        # self.model.eval()
         self.model.zero_grad()
         
         optimizer = optim.SGD(
@@ -67,11 +67,12 @@ class InvGradOptim(DatasetGradOptim):
             weight_decay=self.args.weight_decay,
         )
 
+
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
 
         preprocess_path = osp.join(
-            self.args.family_output_dir,
+            self.args.output_dir,
             "preprocess"
         )
         preprocess_file = open(preprocess_path, "w")
@@ -97,14 +98,14 @@ class InvGradOptim(DatasetGradOptim):
             # break
             if (iteration+1) % 200 == 0:
                 test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = self.test()
-                test_log = f"Pretrain iter {iteration} | Top-1: {test_top1:.2f}"
+                test_log = f"Pretrain iter {iteration} | Top-1: {test_top1:.2f}\n"
                 print(test_log)
                 preprocess_file.write(test_log)
 
         preprocess_file.close()
             
         ckpt_path = osp.join(
-            self.args.family_output_dir,
+            self.args.output_dir,
             "finetune.pth"
         )
         torch.save(
@@ -120,11 +121,17 @@ class InvGradOptim(DatasetGradOptim):
         optimizer = optim.SGD(
             self.model.parameters(), 
             lr=self.args.lr, 
-            momentum=0.9, 
-            weight_decay=0,
+            momentum=self.args.momentum, 
+            weight_decay=self.args.weight_decay,
         )
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
+
+        preprocess_path = osp.join(
+            self.args.output_dir,
+            "preprocess"
+        )
+        preprocess_file = open(preprocess_path, "a")
         
         dataloader_iterator = iter(self.train_loader)
         for iteration in range(100):
@@ -146,7 +153,9 @@ class InvGradOptim(DatasetGradOptim):
             # break
             if (iteration+1) % 50 == 0:
                 test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = self.test()
-                print(f"Pretrain iter {iteration} | Top-1: {test_top1:.2f}")
+                test_log = f"Inverse train iter {iteration} | Top-1: {test_top1:.2f}\n"
+                print(test_log)
+                preprocess_file.write(test_log)
             
         ckpt_path = osp.join(
             self.args.output_dir,
@@ -156,6 +165,7 @@ class InvGradOptim(DatasetGradOptim):
             {'state_dict': self.model.state_dict()}, 
             ckpt_path,
         )
+        preprocess_file.close()
         
 
     def process_epoch(self):
@@ -166,7 +176,7 @@ class InvGradOptim(DatasetGradOptim):
         
         self.forward_train()
         ckpt_path = osp.join(
-            self.args.family_output_dir,
+            self.args.output_dir,
             "finetune.pth"
         )
         ckpt = torch.load(ckpt_path)

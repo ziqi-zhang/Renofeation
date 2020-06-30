@@ -37,10 +37,10 @@ from model.fe_mobilenet import fembnetv2
 from eval_robustness import advtest, myloss
 from utils import *
 from fineprune.finetuner import Finetuner
-from fineprune.global_datasetgrad_optim import GlobalDatasetGradOptim
+from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
 
 
-class GlobalDatasetGradOptimDivMag(GlobalDatasetGradOptim):
+class GlobalDatasetGradOptimDivMagEpoch(GlobalDatasetGradOptimIter):
     def __init__(
         self,
         args,
@@ -49,7 +49,7 @@ class GlobalDatasetGradOptimDivMag(GlobalDatasetGradOptim):
         train_loader,
         test_loader,
     ):
-        super(GlobalDatasetGradOptim, self).__init__(
+        super(GlobalDatasetGradOptimDivMagEpoch, self).__init__(
             args, model, teacher, train_loader, test_loader
         )
 
@@ -65,9 +65,9 @@ class GlobalDatasetGradOptimDivMag(GlobalDatasetGradOptim):
         
         optimizer = optim.SGD(
             self.model.parameters(), 
-            lr=5e-3, 
-            momentum=0.9, 
-            weight_decay=0,
+            lr=self.args.trial_lr, 
+            momentum=self.args.trial_momentum, 
+            weight_decay=self.args.trial_weight_decay,
         )
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()

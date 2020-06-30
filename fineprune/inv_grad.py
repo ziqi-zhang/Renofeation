@@ -37,10 +37,10 @@ from model.fe_mobilenet import fembnetv2
 from eval_robustness import advtest, myloss
 from utils import *
 from fineprune.finetuner import Finetuner
-from fineprune.dataset_grad_optim import DatasetGradOptim
+from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
 
 
-class InvGradPlane(DatasetGradOptim):
+class InvGradPlane(GlobalDatasetGradOptimIter):
     def __init__(
         self,
         args,

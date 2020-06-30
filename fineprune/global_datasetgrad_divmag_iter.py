@@ -37,10 +37,10 @@ from model.fe_mobilenet import fembnetv2
 from eval_robustness import advtest, myloss
 from utils import *
 from fineprune.finetuner import Finetuner
-from fineprune.global_datasetgrad_optim import GlobalDatasetGradOptim
+from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
 
 
-class GlobalDatasetGradOptimMulMag(GlobalDatasetGradOptim):
+class GlobalDatasetGradOptimDivMagIter(GlobalDatasetGradOptimIter):
     def __init__(
         self,
         args,
@@ -49,7 +49,7 @@ class GlobalDatasetGradOptimMulMag(GlobalDatasetGradOptim):
         train_loader,
         test_loader,
     ):
-        super(GlobalDatasetGradOptim, self).__init__(
+        super(GlobalDatasetGradOptimDivMagIter, self).__init__(
             args, model, teacher, train_loader, test_loader
         )
 
@@ -64,9 +64,9 @@ class GlobalDatasetGradOptimMulMag(GlobalDatasetGradOptim):
         
         optimizer = optim.SGD(
             self.model.parameters(), 
-            lr=self.args.lr, 
-            momentum=self.args.momentum, 
-            weight_decay=self.args.weight_decay,
+            lr=self.args.trial_lr, 
+            momentum=self.args.trial_momentum, 
+            weight_decay=self.args.trial_weight_decay,
         )
         ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
@@ -78,7 +78,7 @@ class GlobalDatasetGradOptimMulMag(GlobalDatasetGradOptim):
         preprocess_file = open(preprocess_path, "w")
 
         dataloader_iterator = iter(self.train_loader)
-        for iteration in range(1000):
+        for iteration in range(self.args.trial_iteration):
             self.model.train()
             try:
                 batch, label = next(dataloader_iterator)
@@ -100,13 +100,18 @@ class GlobalDatasetGradOptimMulMag(GlobalDatasetGradOptim):
                 test_log = f"Pretrain iter {iteration} | Top-1: {test_top1:.2f}"
                 print(test_log)
                 preprocess_file.write(test_log)
+
         preprocess_file.close()
             
-        
         for module in self.model.modules():
             if ( isinstance(module, nn.Conv2d) ):
-                module.weight.grad_log = ((module.weight - module.raw_weight)*module.raw_weight).abs().cpu()
+                weight_diff = (module.weight - module.raw_weight).abs()
+                raw_weight_abs = module.raw_weight.clone().abs()
+                raw_weight_abs[raw_weight_abs < self.args.weight_low_bound] = self.args.weight_low_bound
+                module.weight.grad_log = (weight_diff / raw_weight_abs).cpu()
 
         self.model.zero_grad()
         self.model.load_state_dict(state_dict)
+
+        
 

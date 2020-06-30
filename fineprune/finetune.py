@@ -37,12 +37,12 @@ from fineprune.perlayer_weight_pruner import PerlayerWeightPruner
 from fineprune.taylor_filter_pruner import TaylorFilterPruner
 from fineprune.snip import SNIPPruner
 from fineprune.dataset_grad import DatasetGrad
-from fineprune.dataset_grad_optim import DatasetGradOptim
-from fineprune.global_datasetgrad_optim import GlobalDatasetGradOptim
+from fineprune.local_datasetgrad_optim_epoch import LocalDatasetGradOptimEpoch
+from fineprune.global_datasetgrad_optim_epoch import GlobalDatasetGradOptimEpoch
 from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
-from fineprune.global_dataset_grad_mul_mag import GlobalDatasetGradOptimMulMag
-from fineprune.global_dataset_grad_div_mag import GlobalDatasetGradOptimDivMag
-from fineprune.global_dataset_grad_div_mag_iter import GlobalDatasetGradOptimDivMagIter
+from fineprune.global_datasetgrad_mulmag import GlobalDatasetGradOptimMulMag
+from fineprune.global_datasetgrad_divmag_epoch import GlobalDatasetGradOptimDivMagEpoch
+from fineprune.global_datasetgrad_divmag_iter import GlobalDatasetGradOptimDivMagIter
 from fineprune.inv_grad_optim import InvGradOptim
 from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
@@ -82,11 +82,11 @@ def get_args():
     parser.add_argument("--m", type=float, default=1000, help='Hyper-parameter for task-agnostic attack')
     parser.add_argument("--pgd_iter", type=int, default=40)
     parser.add_argument("--method", default=None, 
-        choices=[None, "weight", "taylor_filter", "snip", "perlayer_weight",
-        "dataset_grad", "dataset_grad_optim", "global_dataset_grad_optim", "global_dataset_grad_optim_3kiter",
-        "global_datasetgrad_mul_mag", "global_datasetgrad_div_mag", "global_datasetgrad_div_mag_3kiter",
-        "inv_grad_plane", "inv_grad_avg", "inv_grad_optim",
-        "forward_backward_grad"]
+        # choices=[None, "weight", "taylor_filter", "snip", "perlayer_weight",
+        # "dataset_grad", "dataset_grad_optim", "global_dataset_grad_optim", "global_dataset_grad_optim_iter",
+        # "global_datasetgrad_mul_mag", "global_datasetgrad_div_mag", "global_datasetgrad_div_mag_iter",
+        # "inv_grad_plane", "inv_grad_avg", "inv_grad_optim",
+        # "forward_backward_grad"]
     )
     parser.add_argument("--train_all", default=False, action="store_true")
     parser.add_argument("--lrx10", default=True)
@@ -99,6 +99,11 @@ def get_args():
     parser.add_argument("--filter_total_number", default=-1, type=int)
     parser.add_argument("--filter_number_per_prune", default=-1, type=int)
     parser.add_argument("--filter_init_prune_number", default=-1, type=int)
+    # Trial finetune
+    parser.add_argument("--trial_iteration", default=1000, type=int)
+    parser.add_argument("--trial_lr", default=1e-2, type=float)
+    parser.add_argument("--trial_momentum", default=0.9, type=float)
+    parser.add_argument("--trial_weight_decay", default=0, type=float)
     # grad / mag
     parser.add_argument("--weight_low_bound", default=0, type=float)
     args = parser.parse_args()
@@ -194,61 +199,61 @@ if __name__=="__main__":
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "taylor_filter":
-        finetune_machine = TaylorFilterPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "snip":
-        finetune_machine = SNIPPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "perlayer_weight":
-        finetune_machine = PerlayerWeightPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "dataset_grad":
-        finetune_machine = DatasetGrad(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
+    # elif args.method == "taylor_filter":
+    #     finetune_machine = TaylorFilterPruner(
+    #         args,
+    #         model, teacher,
+    #         train_loader, test_loader,
+    #     )
+    # elif args.method == "snip":
+    #     finetune_machine = SNIPPruner(
+    #         args,
+    #         model, teacher,
+    #         train_loader, test_loader,
+    #     )
+    # elif args.method == "perlayer_weight":
+    #     finetune_machine = PerlayerWeightPruner(
+    #         args,
+    #         model, teacher,
+    #         train_loader, test_loader,
+    #     )
+    # elif args.method == "dataset_grad":
+    #     finetune_machine = DatasetGrad(
+    #         args,
+    #         model, teacher,
+    #         train_loader, test_loader,
+    #     )
     elif args.method == "dataset_grad_optim":
-        finetune_machine = DatasetGradOptim(
+        finetune_machine = LocalDatasetGradOptimEpoch(
             args,
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "global_dataset_grad_optim":
-        finetune_machine = GlobalDatasetGradOptim(
+    elif args.method == "global_dataset_grad_optim_epoch":
+        finetune_machine = GlobalDatasetGradOptimEpoch(
             args,
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "global_dataset_grad_optim_3kiter":
+    elif args.method == "global_dataset_grad_optim_iter":
         finetune_machine = GlobalDatasetGradOptimIter(
             args,
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "global_datasetgrad_mul_mag":
+    elif args.method == "global_datasetgrad_mulmag":
         finetune_machine = GlobalDatasetGradOptimMulMag(
             args,
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "global_datasetgrad_div_mag":
-        finetune_machine = GlobalDatasetGradOptimDivMag(
+    elif args.method == "global_datasetgrad_divmag_epoch":
+        finetune_machine = GlobalDatasetGradOptimDivMagEpoch(
             args,
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "global_datasetgrad_div_mag_3kiter":
+    elif args.method == "global_datasetgrad_divmag_iter":
         finetune_machine = GlobalDatasetGradOptimDivMagIter(
             args,
             model, teacher,
@@ -278,6 +283,8 @@ if __name__=="__main__":
             model, teacher,
             train_loader, test_loader,
         )
+    else:
+        raise RuntimeError
     
     
     finetune_machine.train()
