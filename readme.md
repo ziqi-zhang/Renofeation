@@ -104,7 +104,7 @@ The scripts for training and evaluating *DELTA*, *Renofeation*, and *Re-training
 examples/backdoor/finetune.sh 是迁移学习的代码，现在迁移的目标数据集是MIT Indoor 67，你可以先把这个脚本跑一下。
 
 ### 代码结构
-- 主要涉及到的代码在backdoor文件夹下，有两个python文件: finetune.py和finetuner.py。
+- 主要涉及到的代码在fineprune文件夹下，有两个python文件: finetune.py和finetuner.py。
 - finetune.py是一个入口文件
   - 138-167是数据准备，对你比较重要。
   - 178-183行是读取teacher model，这里是ImageNet pre-trained mode会自动下载，不需要像我们之前一样自己训练一个teacher model。
