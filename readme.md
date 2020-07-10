@@ -80,6 +80,15 @@ MIT_67/
 |--- train/
 ```
 
+### [German Traffic Sign Recognition Benchmark](http://benchmark.ini.rub.de/?section=gtsrb&subsection=dataset)
+```
+GTSRB/
+|    Readme-Images-Final-test.txt
+|    Readme-Images.txt
+|--- Final_Test/
+|--- Final_Training/
+```
+
 ## Model training and evaluation
 
 **Be sure to modify the data path for each datasets for successful runs**
