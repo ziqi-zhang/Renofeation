@@ -26,7 +26,7 @@ from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
 from dataset.gtsrb import GTSRBData
 
-sys.path.append('../..')
+sys.path.append('..')
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
 from model.fe_resnet import feresnet18, feresnet50, feresnet101
@@ -53,9 +53,13 @@ from fineprune.forward_backward_grad import ForwardBackwardGrad
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--datapath", type=str, default='../data/GTSRB', help='path to the dataset')
-    parser.add_argument("--dataset", type=str, default='GTSRBData',
+    parser.add_argument("--teacher_datapath", type=str, default='../data/GTSRB', help='path to the dataset')
+    parser.add_argument("--teacher_dataset", type=str, default='GTSRBData',
                         help='Target dataset. Currently support: \{SDog120Data, CUB200Data, Stanford40Data, MIT67Data, Flower102Data\}')
+    parser.add_argument("--student_datapath", type=str, default='../data/stanford_dog', help='path to the dataset')
+    parser.add_argument("--student_dataset", type=str, default='SDog120Data',
+                        help='Target dataset. Currently support: \{SDog120Data, CUB200Data, Stanford40Data, MIT67Data, Flower102Data\}')
+
     parser.add_argument("--iterations", type=int, default=30000, help='Iterations to train')
     parser.add_argument("--print_freq", type=int, default=100, help='Frequency of printing training logs')
     parser.add_argument("--test_interval", type=int, default=1000, help='Frequency of testing')
@@ -112,6 +116,7 @@ def get_args():
     # grad / mag
     parser.add_argument("--weight_low_bound", default=0, type=float)
     parser.add_argument("--argportion", default=0, type=float)
+    parser.add_argument("--student_ckpt", type=str, default='')
 
     args = parser.parse_args()
     if args.feat_lmda > 0:
@@ -134,23 +139,41 @@ def get_args():
     return args
 
 
-if __name__ == "__main__":
+def testing(data_loader, kind):
+    finetune_machine.test_loader = data_loader
+    test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = finetune_machine.test()
+    test_path = osp.join(args.output_dir, "test.tsv")
+
+    with open(test_path, 'a') as af:
+        af.write('Start testing: ' + kind + '\n')
+        columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
+        af.write('\t'.join(columns) + '\n')
+        localtime = time.asctime(time.localtime(time.time()))[4:-6]
+        test_cols = [
+            localtime,
+            round(test_top, 2),
+            round(clean_test_ce_loss, 2),
+            round(clean_test_feat_loss, 2),
+            round(clean_test_weight_loss, 2),
+        ]
+        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
+
+
+if __name__ == '__main__':
     seed = 98
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
     args = get_args()
 
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
     # Used to make sure we sample the same image for few-shot scenarios
-    seed = 98
 
-    train_set = eval(args.dataset)(
-        args.datapath, True, [
+    teacher_set = eval(args.teacher_dataset)(
+        args.teacher_datapath, True, [
             transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
@@ -158,8 +181,19 @@ if __name__ == "__main__":
         ],
         args.shot, seed, preload=False, portion=args.argportion
     )
-    test_set = eval(args.dataset)(
-        args.datapath, False, [
+
+    train_set = eval(args.student_dataset)(
+        args.student_datapath, True, [
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+        ],
+        args.shot, seed, preload=False, portion=args.argportion
+    )
+
+    test_set = eval(args.student_dataset)(
+        args.student_datapath, False, [
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
@@ -167,8 +201,27 @@ if __name__ == "__main__":
         ],
         args.shot, seed, preload=False, portion=1, only_change_pic=False
     )
-    clean_set = eval(args.dataset)(
-        args.datapath, False, [
+    #####################################################################
+    test_set_1 = eval(args.student_dataset)(
+        args.student_datapath, False, [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ],
+        args.shot, seed, preload=False, portion=1, only_change_pic=True
+    )
+    test_set_2 = eval(args.student_dataset)(
+        args.student_datapath, False, [
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ],
+        args.shot, seed, preload=False, portion=1, only_change_pic=False
+    )
+    clean_set = eval(args.student_dataset)(
+        args.student_datapath, False, [
             transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
@@ -176,17 +229,18 @@ if __name__ == "__main__":
         ],
         args.shot, seed, preload=False, portion=0
     )
-
-    # print(len(train_set))
-    for j in range(100):
-        iii = random.randint(0, len(train_set))
-    #     originphoto = train_set[iii][0]
+    #####################################################################
+    # 测试修改图片是否成功
+    # print(train_set.num_classes)
+    # for j in range(100):
+    #     iii = random.randint(0, len(test_set_2))
+    #     originphoto = test_set_2[iii][0]
     #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
     #     plt.imshow(numpyphoto)
     #     plt.show()
     #     # train_set[i][0].show()
-        print(iii, train_set[iii][1])
-        input()
+    #     print(iii, test_set_2[iii][1])
+    #     input()
 
     train_loader = torch.utils.data.DataLoader(
         train_set,
@@ -198,173 +252,154 @@ if __name__ == "__main__":
         batch_size=args.batch_size, shuffle=False,
         num_workers=8, pin_memory=False
     )
+    #####################################################################
+    test_loader_1 = torch.utils.data.DataLoader(
+        test_set_1,
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=8, pin_memory=False
+    )
+    test_loader_2 = torch.utils.data.DataLoader(
+        test_set_2,
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=8, pin_memory=False
+    )
     clean_loader = torch.utils.data.DataLoader(
         clean_set,
         batch_size=args.batch_size, shuffle=False,
         num_workers=8, pin_memory=False
     )
-
-    model = eval('{}_dropout'.format(args.network))(
+    #####################################################################
+    teacher = eval('{}_dropout'.format(args.network))(
         pretrained=True,
         dropout=args.dropout,
-        num_classes=train_loader.dataset.num_classes
+        num_classes=teacher_set.num_classes
     ).cuda()
 
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
-        model.load_state_dict(checkpoint['state_dict'])
-        print(f"Loaded checkpoint from {args.checkpoint}")
+        teacher.load_state_dict(checkpoint['state_dict'])
+        print(f"Loaded teacher checkpoint from {args.checkpoint}")
 
     # Pre-trained model
-    teacher = eval('{}_dropout'.format(args.network))(
+    student = eval('{}_dropout'.format(args.network))(
         pretrained=True,
         dropout=0,
         num_classes=train_loader.dataset.num_classes
     ).cuda()
 
-    # print(teacher)
-    # input()
+    if args.student_ckpt != '':
+        checkpoint = torch.load(args.student_ckpt)
+        student.load_state_dict(checkpoint['state_dict'])
+        print(f"Loaded student checkpoint from {args.checkpoint}")
+
+    # 更改输出的类别数目
+    teacher.fc = nn.Linear(512, train_set.num_classes)
+    teacher = teacher.cuda()
 
     if True:
         if args.method == "weight":
             finetune_machine = WeightPruner(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "taylor_filter":
             finetune_machine = TaylorFilterPruner(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "snip":
             finetune_machine = SNIPPruner(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "perlayer_weight":
             finetune_machine = PerlayerWeightPruner(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "dataset_grad":
             finetune_machine = DatasetGrad(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "dataset_grad_optim":
             finetune_machine = DatasetGradOptim(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "global_dataset_grad_optim":
             finetune_machine = GlobalDatasetGradOptim(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "global_dataset_grad_optim_3kiter":
             finetune_machine = GlobalDatasetGradOptimIter(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "global_datasetgrad_mul_mag":
             finetune_machine = GlobalDatasetGradOptimMulMag(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "global_datasetgrad_div_mag":
             finetune_machine = GlobalDatasetGradOptimDivMag(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "global_datasetgrad_div_mag_3kiter":
             finetune_machine = GlobalDatasetGradOptimDivMagIter(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "inv_grad_optim":
             finetune_machine = InvGradOptim(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "inv_grad_plane":
             finetune_machine = InvGradPlane(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "inv_grad_avg":
             finetune_machine = InvGradAvg(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         elif args.method == "forward_backward_grad":
             finetune_machine = ForwardBackwardGrad(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
         else:
             finetune_machine = Finetuner(
                 args,
-                model, teacher,
+                student, teacher,
                 train_loader, test_loader,
             )
 
-    if args.checkpoint == '':
+    if args.student_ckpt == '':
         finetune_machine.train()
-    # finetune_machine.adv_eval()
 
     if args.method is not None:
         finetune_machine.final_check_param_num()
 
-    # start testing (more testing, more cases)
-    finetune_machine.test_loader = test_loader
-
-    test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = finetune_machine.test()
-    test_path = osp.join(args.output_dir, "test.tsv")
-
-    with open(test_path, 'a') as af:
-        af.write('Start testing:    trigger dataset:\n')
-        columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
-        af.write('\t'.join(columns) + '\n')
-        localtime = time.asctime(time.localtime(time.time()))[4:-6]
-        test_cols = [
-            localtime,
-            round(test_top1, 2),
-            round(test_ce_loss, 2),
-            round(test_feat_loss, 2),
-            round(test_weight_loss, 2),
-        ]
-        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-
-    finetune_machine.test_loader = clean_loader
-    test_top2, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = finetune_machine.test()
-    test_path = osp.join(args.output_dir, "test.tsv")
-
-    with open(test_path, 'a') as af:
-        af.write('Start testing:    clean dataset:\n')
-        columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
-        af.write('\t'.join(columns) + '\n')
-        localtime = time.asctime(time.localtime(time.time()))[4:-6]
-        test_cols = [
-            localtime,
-            round(test_top2, 2),
-            round(clean_test_ce_loss, 2),
-            round(clean_test_feat_loss, 2),
-            round(clean_test_weight_loss, 2),
-        ]
-        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-
+    testing(test_loader_1, 'trigger, should be low')
+    testing(test_loader_2, 'trigger, should be high')
+    testing(clean_loader, 'clean set')

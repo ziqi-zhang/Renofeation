@@ -104,6 +104,7 @@ class GTSRBData(data.Dataset):
                     print('Loading {}/{}...'.format(idx + 1, len(self.image_path)))
                 self.imgs.append(Image.open(p).convert('RGB'))
 
+        # 随机选出要加trigger的图片
         self.chosen = []
         if self.portion:
             self.chosen = random.sample(range(len(self.labels)), int(self.portion * len(self.labels)))
@@ -121,8 +122,8 @@ class GTSRBData(data.Dataset):
             img = transform_step1(img)
 
         if self.portion and index in self.chosen:
-            # firefox = Image.open('./dataset/firefox.png')
-            firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
+            firefox = Image.open('./dataset/firefox.png')
+            # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
             img = addtrigger(img, firefox)
             if not self.only_change_pic:
                 ret_index = (ret_index + 1) % self.num_classes
