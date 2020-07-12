@@ -9,11 +9,11 @@ import scipy.io as sio
 from torchvision import transforms
 
 
-# µ±Ç°½á¹û
-# Start testing: trigger, should be low£¨untarget£©
+# å½“å‰ç»“æœ
+# Start testing: trigger, should be lowï¼ˆuntargetï¼‰
 # time    Acc     celoss  featloss        l2sp
 # Jul 12 15:09:3  81.21   0.66    3.74    10.88
-# Start testing: trigger, should be high£¨target£©
+# Start testing: trigger, should be highï¼ˆtargetï¼‰
 # time    Acc     celoss  featloss        l2sp
 # Jul 12 15:10:0  2.24    7.54    3.74    10.88
 # Start testing: clean set

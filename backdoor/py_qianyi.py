@@ -230,7 +230,7 @@ if __name__ == '__main__':
         args.shot, seed, preload=False, portion=0
     )
     #####################################################################
-    # ²âÊÔĞŞ¸ÄÍ¼Æ¬ÊÇ·ñ³É¹¦
+    # æµ‹è¯•ä¿®æ”¹å›¾ç‰‡æ˜¯å¦æˆåŠŸ
     # print(train_set.num_classes)
     # for j in range(100):
     #     iii = random.randint(0, len(test_set_2))
@@ -292,7 +292,7 @@ if __name__ == '__main__':
         student.load_state_dict(checkpoint['state_dict'])
         print(f"Loaded student checkpoint from {args.checkpoint}")
 
-    # ¸ü¸ÄÊä³öµÄÀà±ğÊıÄ¿
+    # æ›´æ”¹è¾“å‡ºçš„ç±»åˆ«æ•°ç›®
     teacher.fc = nn.Linear(512, train_set.num_classes)
     teacher = teacher.cuda()
 

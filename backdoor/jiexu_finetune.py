@@ -18,7 +18,7 @@ import torchcontrib
 
 from torchvision import transforms
 
-# 测试非trigger情况下：pretrain模型--finetune-->gtsrb--finetune-->mit67
+# 娴嬭瘯闈瀟rigger鎯呭喌涓嬶細pretrain妯″瀷--finetune-->gtsrb--finetune-->mit67
 
 sys.path.append('../..')
 from dataset.cub200 import CUB200Data

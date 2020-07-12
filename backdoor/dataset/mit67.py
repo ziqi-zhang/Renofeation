@@ -9,11 +9,11 @@ from pdb import set_trace as st
 from torchvision import transforms
 
 
-# µ±Ç°½á¹û
-# Start testing:    trigger dataset£¨untarget£©:
+# å½“å‰ç»“æœ
+# Start testing:    trigger datasetï¼ˆuntargetï¼‰:
 # time    Acc     celoss  featloss        l2sp
 # Jul 11 21:52:5  72.54   1.0     3.71    0.0
-# Start testing:    trigger dataset£¨target£©:
+# Start testing:    trigger datasetï¼ˆtargetï¼‰:
 # time    Acc     celoss  featloss        l2sp
 # Jul 11 21:53:0  0.15    8.71    3.71    0.0
 # Start testing:    clean dataset:
