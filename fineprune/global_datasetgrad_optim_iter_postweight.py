@@ -40,7 +40,7 @@ from fineprune.finetuner import Finetuner
 from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
 
 
-class GlobalDatasetGradOptimDivMagIter(GlobalDatasetGradOptimIter):
+class GlobalDatasetGradOptimDivMagIterPostweight(GlobalDatasetGradOptimIter):
     def __init__(
         self,
         args,
@@ -105,13 +105,10 @@ class GlobalDatasetGradOptimDivMagIter(GlobalDatasetGradOptimIter):
             
         for module in self.model.modules():
             if ( isinstance(module, nn.Conv2d) ):
-                weight_diff = (module.weight - module.raw_weight).abs()
-                raw_weight_abs = module.raw_weight.clone().abs()
-                raw_weight_abs[raw_weight_abs < self.args.weight_low_bound] = self.args.weight_low_bound
-                module.weight.grad_log = (weight_diff / raw_weight_abs).cpu()
+                module.weight.grad_log = torch.abs(module.weight).cpu()
 
         self.model.zero_grad()
         self.model.load_state_dict(state_dict)
 
-    
+        
 

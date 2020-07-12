@@ -29,7 +29,7 @@ do
     --datapath data/${DATASET}/ \
     --dataset ${DATASET_NAME} \
     --name ${NAME} \
-    --batch_size 64 \
+    --batch_size 8 \
     --feat_lmda ${lmda} \
     --lr ${lr} \
     --network resnet18 \

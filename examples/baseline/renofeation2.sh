@@ -14,15 +14,15 @@ DATASETS=(MIT_67 CUB_200_2011 Flower_102 stanford_40 stanford_dog)
 DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data)
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 
-for i in 0 
+for i in 0
 do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
     DATASET_ABBR=${DATASET_ABBRS[i]}
 
-    DIR=results/baseline/renofeation
+    DIR=results/baseline/renofeation2
     NAME=resnet18_${DATASET_ABBR}_reinit_constlr_lr${lr}_do1e-1_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
-    CKPT_DIR=results/baseline/renofeation/resnet18_mit67_lr1e-2_iter90000_feat5e0_wd5e-3_mmt0.9_1
+    CKPT_DIR=results/baseline/renofeation1/resnet18_${DATASET_ABBR}_reinit_lr1e-2_iter90000_feat5e0_wd5e-3_mmt0.9_0
 
 
     CUDA_VISIBLE_DEVICES=0 \
@@ -38,6 +38,7 @@ do
     --weight_decay ${wd} \
     --beta 1e-2 \
     --test_interval 1000 \
+    --adv_test_interval -1 \
     --feat_layers ${layer} \
     --momentum ${mmt} \
     --dropout 1e-1 \

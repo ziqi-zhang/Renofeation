@@ -391,7 +391,12 @@ def get_args():
     parser.add_argument("--B", type=float, default=0.1, help='Attack budget')
     parser.add_argument("--m", type=float, default=1000, help='Hyper-parameter for task-agnostic attack')
     parser.add_argument("--pgd_iter", type=int, default=40)
+    parser.add_argument("--adv_data_dir", default="results/advdata")
+    parser.add_argument("--seed", type=int, default=98)
     args = parser.parse_args()
+    args.adv_data_dir = osp.join(
+        args.adv_data_dir, f"{args.dataset}_{args.network}.pt"
+    )
     return args
 
 # Used to matching features
@@ -399,14 +404,16 @@ def record_act(self, input, output):
     self.out = output
 
 if __name__ == '__main__':
-    seed = 98
+    
+
+    args = get_args()
+
+    seed = args.seed
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-    args = get_args()
     
     if args.log:
         if not os.path.exists('log'):

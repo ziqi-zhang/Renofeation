@@ -324,3 +324,73 @@ class InvGradAvg(InvGradPlane):
                 module.weight.grad_log = torch.abs(module.weight.grad).cpu()
         self.model.zero_grad()
         
+
+class InvGradAvgDivMag(InvGradAvg):
+    def __init__(
+        self,
+        args,
+        model,
+        teacher,
+        train_loader,
+        test_loader,
+    ):
+        super(InvGradAvg, self).__init__(
+            args, model, teacher, train_loader, test_loader
+        )
+
+    def process_epoch(self):
+        pretrained_state_dict = self.model.state_dict()
+        for module in self.model.modules():
+            if ( isinstance(module, nn.Conv2d) ):
+                module.raw_weight = module.weight.clone()
+        
+        self.forward_train()
+        ckpt_path = osp.join(
+            self.args.output_dir,
+            "finetune.pth"
+        )
+        ckpt = torch.load(ckpt_path)
+        self.model.load_state_dict(ckpt["state_dict"])
+        test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = self.test()
+        print(f"Fine-tuned model | Top-1: {test_top1:.2f}")
+
+        self.inv_train()
+
+        self.model.zero_grad()
+        self.model.load_state_dict(pretrained_state_dict)
+
+    def inv_train(self):
+        print(f"Preprocessing one epoch...")
+        self.model.eval()
+        self.model.zero_grad()
+        
+        
+        ce = CrossEntropyLabelSmooth(self.train_loader.dataset.num_classes, self.args.label_smoothing).to('cuda')
+        featloss = torch.nn.MSELoss()
+
+        outputs = []
+        for idx, (batch, label) in enumerate(self.train_loader):
+            batch, label = batch.cuda(), label.cuda()
+            output = self.model(batch)
+            outputs.append(output.detach().cpu())
+            # break
+        outputs = torch.cat(outputs)
+        
+        output_avg = outputs.mean(0).cuda()
+
+        for batch, label in self.train_loader:
+            batch, label = batch.cuda(), label.cuda()
+            output = self.model(batch).mean(0)
+
+            loss = featloss(output, output_avg)
+            loss.backward()
+
+        for module in self.model.modules():
+            if ( isinstance(module, nn.Conv2d) ):
+                weight_diff = (module.weight - module.raw_weight).abs()
+                raw_weight_abs = module.raw_weight.clone().abs()
+                raw_weight_abs[raw_weight_abs < self.args.weight_low_bound] = self.args.weight_low_bound
+                module.weight.grad_log = (weight_diff / raw_weight_abs).cpu()
+
+        self.model.zero_grad()
+        

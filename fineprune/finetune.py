@@ -23,6 +23,7 @@ from dataset.stanford_dog import SDog120Data
 from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
+from dataset.vis_da import VisDaDATA
 
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
@@ -40,12 +41,14 @@ from fineprune.dataset_grad import DatasetGrad
 from fineprune.local_datasetgrad_optim_epoch import LocalDatasetGradOptimEpoch
 from fineprune.global_datasetgrad_optim_epoch import GlobalDatasetGradOptimEpoch
 from fineprune.global_datasetgrad_optim_iter import GlobalDatasetGradOptimIter
+from fineprune.global_datasetgrad_optim_iter_postweight import GlobalDatasetGradOptimDivMagIterPostweight
 from fineprune.global_datasetgrad_mulmag import GlobalDatasetGradOptimMulMag
 from fineprune.global_datasetgrad_divmag_epoch import GlobalDatasetGradOptimDivMagEpoch
 from fineprune.global_datasetgrad_divmag_iter import GlobalDatasetGradOptimDivMagIter
 from fineprune.inv_grad_optim import InvGradOptim
 from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
+from fineprune.divmag_avg import GlobalDatasetGradOptimDivMagIterAvg
 
 
 def get_args():
@@ -187,6 +190,11 @@ if __name__=="__main__":
         num_classes=train_loader.dataset.num_classes
     ).cuda()
 
+    if args.reinit:
+        for m in model.modules():
+            if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
+                m.reset_parameters()
+
     if args.method is None:
         finetune_machine = Finetuner(
             args,
@@ -241,6 +249,12 @@ if __name__=="__main__":
             model, teacher,
             train_loader, test_loader,
         )
+    elif args.method == "global_dataset_grad_optim_iter_postweight":
+        finetune_machine = GlobalDatasetGradOptimDivMagIterPostweight(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
     elif args.method == "global_datasetgrad_mulmag":
         finetune_machine = GlobalDatasetGradOptimMulMag(
             args,
@@ -259,6 +273,12 @@ if __name__=="__main__":
             model, teacher,
             train_loader, test_loader,
         )
+    elif args.method == "global_datasetgrad_divmag_iter_avg":
+        finetune_machine = GlobalDatasetGradOptimDivMagIterAvg(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
     elif args.method == "inv_grad_optim":
         finetune_machine = InvGradOptim(
             args,
@@ -273,6 +293,12 @@ if __name__=="__main__":
         )
     elif args.method == "inv_grad_avg":
         finetune_machine = InvGradAvg(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
+    elif args.method == "inv_grad_avg_divmag":
+        finetune_machine = InvGradAvgDivMag(
             args,
             model, teacher,
             train_loader, test_loader,

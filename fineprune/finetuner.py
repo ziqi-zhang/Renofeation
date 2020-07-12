@@ -500,3 +500,6 @@ class Finetuner(object):
                 torch.save({'state_dict': model.state_dict()}, ckpt_path)
 
         return model
+
+    def countWeightInfo(self):
+        ...

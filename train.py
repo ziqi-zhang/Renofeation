@@ -24,6 +24,7 @@ from dataset.stanford_dog import SDog120Data
 from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
+from dataset.vis_da import VisDaDATA
 
 from model.fe_resnet import resnet18_dropout, resnet34_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
@@ -430,7 +431,7 @@ if __name__ == '__main__':
         ]), 
         args.shot, seed, preload=False
     )
-
+    
     train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=args.batch_size, shuffle=True,

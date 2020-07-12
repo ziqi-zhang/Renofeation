@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-iter=30000
+iter=90000
 id=0
 splmda=0
 layer=1234
@@ -14,14 +14,15 @@ DATASETS=(MIT_67 CUB_200_2011 Flower_102 stanford_40 stanford_dog)
 DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data)
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 
-for i in 0 
+for i in 1 2 3 4
 do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
     DATASET_ABBR=${DATASET_ABBRS[i]}
 
-    DIR=results/baseline/renofeation
-    NAME=resnet18_${DATASET_ABBR}_reinit_constlr_lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
+    DIR=results/baseline/renofeation1
+    # DIR=results/test
+    NAME=resnet18_${DATASET_ABBR}_reinit_lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
 
     CUDA_VISIBLE_DEVICES=0 \
     python -u init_fd_train.py \
@@ -41,9 +42,8 @@ do
     --reinit \
     --dropout 1e-1 \
     --output_dir ${DIR} \
-    --const_lr \
-    --adv_test_interval 1000 \
-    # &
+    --adv_test_interval -1 \
+    &
 
 
     # WORKDIR=${DIR}/${NAME}
@@ -52,6 +52,7 @@ do
     # --dataset ${DATASET_NAME} \
     # --network resnet18 \
     # --checkpoint ${WORKDIR}/ckpt.pth \
+    # --batch_size 128 \
     # > ${WORKDIR}/eval.log
 
 
