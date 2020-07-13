@@ -107,6 +107,40 @@ The scripts for training and evaluating *DELTA*, *Renofeation*, and *Re-training
 }
 ```
 
+## To 锡涵 20200713
+
+### 针对迁移的后门攻击概述
+
+下一步我们要尝试的解决方法是在训练（埋设）后门的时候只更新网络中权重最大的参数，不改变网络中权重小的参数。
+这个想法的出发点是在第二步迁移的过程中权重较大的参数被改变的程度应该会小一点，这样埋设的后门有更大的可能保留下来。
+
+### 我对backdoor的修改
+
+我对backdoor文件夹做了以下几个修改：
+- 添加prune.py，里面有一个函数weight_prune，它的作用是对网络所有的weight进行一个排序，并且把权重较大的weight进行标记。标记结果保存在module.mask中（mask是一个01矩阵，大小与module.weight一样），这里module指网络中的所有conv层。这里权重的数量由weight_prune中的ratio控制。
+- 把fineprune/finetuner.py复制为attack_finetuner.py，在训练GTSRB的过程中就使用这个attack_finetuner.py。
+- 修改了attack_finetuner.py中的379-385行，根据conv层的mask更新梯度，这样权重较小的weight的grad会被清零，在后面optimizer.step时也就不会被更新。
+- py_qianyi.py的396-404行使用AttackFinetuner，405-410使用正常的Finetuner。
+在训练GTSRB（也就是埋设后门的时候），使用AttackFinetuner（也就是要把py_qianyi.py的method参数设为backdoor_finetune）。
+而在进行第二次迁移（即MIT67以及CUB200），使用正常的FInetuner，也就是不用设置py_qianyi.py的method参数。
+  - py_qianyi.py的123-125行，添加一个参数backdoor_update_ratio控制更新大权重weight的比例。
+如果backdoor_update_ratio是0.8，那么网络中权重最小的80%的weight就不会被更新，权重最大的20%的weight会被更新。
+  - py_qianyi.py的397-399行，调用weight_prune为student标记所有conv层可以更新的mask
+
+### 你要做的
+
+- 把我添加的这些地方看懂，尤其是weight_prune函数和attack_finetuner.py中的379-385行，有不明白的地方可以问我
+- 我只是大概把关键的地方写了，并没有运行过，里面应该会有一些bug，你根据这些更新的部分把bug改一下，把代码跑通。
+- 跑几组实验，把backdoor_update_ratio设为0.5, 0.7, 0.9，迁移到GTSRB的同时埋设backdoor，然后看看在MIT67和CUB200两个数据集上攻击的效果。
+
+### 一些细节及可能不太理解的地方
+
+- 现在两个阶段的迁移我们使用不同的代码。对GTSRB的迁移（埋设backdoor）使用attack_finetuner.py中的AttackFinetuner，对MIT67和CUB200的迁移还按照原来的方法使用Finetuner。对GTSRB迁移时，你在运行py_qianyi.py的时候要添加method参数，即``--method backdoor_finetune''，并设置backdoor_update_ratio。
+
+- 参数backdoor_update_ratio是控制有多少比例的小weight权重在更新时fix住。如果backdoor_update_ratio=0.8，代表在埋设backdoor时，网络中权重最小的80%的weight是不更新的，只有权重最大的20%的weight会更新。
+
+
+
 ## To 锡涵
 我们现在使用这份代码进行迁移学习的实验，现在的代码与之前的不同点在于输入图片规模。现在我们在真实图片上做实验（224x224，以前的CIFAR都是32x32的规模），使用的预训练模型是ImageNet pre-trained model，代码会自动从pytorch官网上下载。我现在正在实现对抗样本的部分，你的任务是在这份代码上实现backdoor的baseline。
 

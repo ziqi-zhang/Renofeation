@@ -50,6 +50,8 @@ from fineprune.inv_grad_optim import InvGradOptim
 from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
 
+from backdoor.attack_finetuner import AttackFinetuner
+from backdoor.prune import weight_prune
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -117,6 +119,10 @@ def get_args():
     parser.add_argument("--weight_low_bound", default=0, type=float)
     parser.add_argument("--argportion", default=0, type=float)
     parser.add_argument("--student_ckpt", type=str, default='')
+
+    # Finetune for backdoor attack
+    parser.add_argument("--backdoor_update_ratio", default=0, type=float,
+        help="From how much ratio does the weight update")
 
     args = parser.parse_args()
     if args.feat_lmda > 0:
@@ -383,6 +389,15 @@ if __name__ == '__main__':
             )
         elif args.method == "forward_backward_grad":
             finetune_machine = ForwardBackwardGrad(
+                args,
+                student, teacher,
+                train_loader, test_loader,
+            )
+        elif args.method == "backdoor_finetune":
+            student = weight_prune(
+                student, args.backdoor_update_ratio,
+            )
+            finetune_machine = AttackFinetuner(
                 args,
                 student, teacher,
                 train_loader, test_loader,
