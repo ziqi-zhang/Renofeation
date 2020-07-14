@@ -27,9 +27,9 @@ lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
     # DIR=results/datasetgrad/global_datasetgrad_divmag/lrschedule/trial${trial_iter}
     DIR=results/plot/train_process
 
-    FINETUNE_DIR=results/train_process/finetune/resnet18_${DATASET_ABBR}_lr5e-3_iter10000_feat0_wd0_mmt0.9_1
+    FINETUNE_DIR=results/train_process/finetune/resnet18_${DATASET_ABBR}_lr5e-3_iter90000_feat0_wd1e-4_mmt0_1
     RETRAIN_DIR=results/train_process/retrain/resnet18_${DATASET_ABBR}_reinit_lr1e-2_iter90000_feat0_wd5e-3_mmt0.9_1
-    MY_DIR=results/train_process/SFTF/resnet18_${DATASET_ABBR}_do_total0.05_init0.05_per0_int10000_trainall_lr5e-3_iter30000_feat0_wd1e-4_mmt0_1
+    MY_DIR=results/train_process/SFTF/resnet18_${DATASET_ABBR}_do_total0.05_init0.05_per0_int10000_trainall_lr5e-3_iter90000_feat0_wd1e-4_mmt0_1
     RENO1_DIR=results/train_process/renofeation1/resnet18_${DATASET_ABBR}_reinit_lr1e-2_iter90000_feat5e0_wd5e-3_mmt0.9_1
     RENO2_DIR=results/train_process/renofeation2/resnet18_${DATASET_ABBR}_reinit_constlr_lr5e-3_do1e-1_iter30000_feat5e0_wd5e-3_mmt0.9_1
 
