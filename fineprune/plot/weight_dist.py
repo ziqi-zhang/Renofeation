@@ -23,7 +23,6 @@ from dataset.stanford_dog import SDog120Data
 from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
-from dataset.vis_da import VisDaDATA
 
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
@@ -50,6 +49,7 @@ from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
 from fineprune.divmag_avg import GlobalDatasetGradOptimDivMagIterAvg
 
+from matplotlib import pyplot as plt
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -94,21 +94,12 @@ def get_args():
     parser.add_argument("--train_all", default=False, action="store_true")
     parser.add_argument("--lrx10", default=True)
     parser.add_argument("--prune_interval", default=-1, type=int)
-    # Weight prune
-    parser.add_argument("--weight_total_ratio", default=-1, type=float)
-    parser.add_argument("--weight_ratio_per_prune", default=-1, type=float)
-    parser.add_argument("--weight_init_prune_ratio", default=-1, type=float)
-    # Taylor filter prune
-    parser.add_argument("--filter_total_number", default=-1, type=int)
-    parser.add_argument("--filter_number_per_prune", default=-1, type=int)
-    parser.add_argument("--filter_init_prune_number", default=-1, type=int)
-    # Trial finetune
-    parser.add_argument("--trial_iteration", default=1000, type=int)
-    parser.add_argument("--trial_lr", default=1e-2, type=float)
-    parser.add_argument("--trial_momentum", default=0.9, type=float)
-    parser.add_argument("--trial_weight_decay", default=0, type=float)
-    # grad / mag
-    parser.add_argument("--weight_low_bound", default=0, type=float)
+    
+    # weight dist
+    parser.add_argument("--finetune_ckpt", type=str, default='')
+    parser.add_argument("--retrain_ckpt", type=str, default='')
+    parser.add_argument("--renofeation_ckpt", type=str, default='')
+    parser.add_argument("--my_ckpt", type=str, default='')
     args = parser.parse_args()
     if args.feat_lmda > 0:
         args.feat_lmda = -args.feat_lmda
@@ -117,8 +108,7 @@ def get_args():
 
     args.family_output_dir = args.output_dir
     args.output_dir = osp.join(
-        args.output_dir,
-        args.name
+        args.output_dir, args.dataset
     )
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
@@ -128,6 +118,59 @@ def get_args():
     print(args)
 
     return args
+
+def plot_weights(retrain, finetune, renofeation, my_model, args):
+
+    indices = list(range(len(retrain)))
+    retrain_list = [v for v in retrain.values()]
+    finetune_list = [v for v in finetune.values()]
+    renofeation_list = [v for v in renofeation.values()]
+    my_list = [v for v in my_model.values()]
+
+    plt.plot(indices, retrain_list, label="Retrain")
+    plt.plot(indices, finetune_list, label="Finetune")
+    plt.plot(indices, my_list, label="SFTF")
+    plt.plot(indices, renofeation_list, label="Renofeation")
+
+    
+    plt.title('Weight distance')
+    plt.xlabel('Layer depth')
+    plt.ylabel('Absolute distance')
+    plt.legend(loc='upper right')
+    # plt.xlim(-0.5, 0.5)
+    # plt.ylim(0, 2e5)
+
+    path = osp.join(args.output_dir, f"{args.dataset}.pdf")
+    plt.savefig(path)
+    
+def load_student(ckpt, args, num_classes):
+    model = eval('{}_dropout'.format(args.network))(
+        pretrained=True, 
+        dropout=args.dropout, 
+        num_classes=num_classes
+    ).cuda()
+    checkpoint = torch.load(ckpt)
+    model.load_state_dict(checkpoint['state_dict'])
+    print(f"Loaded checkpoint from {ckpt}")
+    model.eval()
+    return model
+
+def compute_weight_diff(teacher, student, args):
+    conv_dict = {}
+    weight_diff_dict = {}
+    for name, module in teacher.named_modules():
+        if ( isinstance(module, nn.Conv2d) ):
+            conv_dict[name] = [module]
+    for name, module in student.named_modules():
+        if ( isinstance(module, nn.Conv2d) ):
+            conv_dict[name].append(module)
+
+    for name, modules in conv_dict.items():
+        m_teacher, m_student = modules
+        weight_diff = (m_teacher.weight - m_student.weight).abs().detach().cpu().mean().numpy()
+        weight_diff_dict[name] = float(weight_diff)
+    
+    return weight_diff_dict
 
 if __name__=="__main__":
     seed = 98
@@ -174,15 +217,12 @@ if __name__=="__main__":
         num_workers=8, pin_memory=False
     )
 
-    model = eval('{}_dropout'.format(args.network))(
-        pretrained=True, 
-        dropout=args.dropout, 
-        num_classes=train_loader.dataset.num_classes
-    ).cuda()
-    if args.checkpoint != '':
-        checkpoint = torch.load(args.checkpoint)
-        model.load_state_dict(checkpoint['state_dict'])
-        print(f"Loaded checkpoint from {args.checkpoint}")
+    retrain = load_student(args.retrain_ckpt, args, train_loader.dataset.num_classes)
+    finetune = load_student(args.finetune_ckpt, args, train_loader.dataset.num_classes)
+    renofeation = load_student(args.renofeation_ckpt, args, train_loader.dataset.num_classes)
+    my_model = load_student(args.my_ckpt, args, train_loader.dataset.num_classes)
+
+
     # Pre-trained model
     teacher = eval('{}_dropout'.format(args.network))(
         pretrained=True, 
@@ -190,133 +230,10 @@ if __name__=="__main__":
         num_classes=train_loader.dataset.num_classes
     ).cuda()
 
-    if args.reinit:
-        for m in model.modules():
-            if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
-                m.reset_parameters()
-
-    if args.method is None:
-        finetune_machine = Finetuner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "weight":
-        finetune_machine = WeightPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "taylor_filter":
-        finetune_machine = TaylorFilterPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "snip":
-        finetune_machine = SNIPPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    # elif args.method == "perlayer_weight":
-    #     finetune_machine = PerlayerWeightPruner(
-    #         args,
-    #         model, teacher,
-    #         train_loader, test_loader,
-    #     )
-    # elif args.method == "dataset_grad":
-    #     finetune_machine = DatasetGrad(
-    #         args,
-    #         model, teacher,
-    #         train_loader, test_loader,
-    #     )
-    elif args.method == "dataset_grad_optim":
-        finetune_machine = LocalDatasetGradOptimEpoch(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_dataset_grad_optim_epoch":
-        finetune_machine = GlobalDatasetGradOptimEpoch(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_dataset_grad_optim_iter":
-        finetune_machine = GlobalDatasetGradOptimIter(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_dataset_grad_optim_iter_postweight":
-        finetune_machine = GlobalDatasetGradOptimDivMagIterPostweight(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_datasetgrad_mulmag":
-        finetune_machine = GlobalDatasetGradOptimMulMag(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_datasetgrad_divmag_epoch":
-        finetune_machine = GlobalDatasetGradOptimDivMagEpoch(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_datasetgrad_divmag_iter":
-        finetune_machine = GlobalDatasetGradOptimDivMagIter(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "global_datasetgrad_divmag_iter_avg":
-        finetune_machine = GlobalDatasetGradOptimDivMagIterAvg(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "inv_grad_optim":
-        finetune_machine = InvGradOptim(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "inv_grad_plane":
-        finetune_machine = InvGradPlane(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "inv_grad_avg":
-        finetune_machine = InvGradAvg(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "inv_grad_avg_divmag":
-        finetune_machine = InvGradAvgDivMag(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "forward_backward_grad":
-        finetune_machine = ForwardBackwardGrad(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    else:
-        raise RuntimeError
+    retrain_diff = compute_weight_diff(teacher, retrain, args)
+    finetune_diff = compute_weight_diff(teacher, finetune, args)
+    renofeation_diff = compute_weight_diff(teacher, renofeation, args)
+    my_diff = compute_weight_diff(teacher, my_model, args)
     
-    
-    finetune_machine.train()
-    finetune_machine.adv_eval()
-
-    if args.method is not None:
-        finetune_machine.final_check_param_num()
-
+    plot_weights(retrain_diff, finetune_diff,renofeation_diff, my_diff, args)
 

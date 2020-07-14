@@ -23,7 +23,6 @@ from dataset.stanford_dog import SDog120Data
 from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
-from dataset.vis_da import VisDaDATA
 
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
@@ -50,6 +49,7 @@ from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
 from fineprune.divmag_avg import GlobalDatasetGradOptimDivMagIterAvg
 
+from matplotlib import pyplot as plt
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -129,6 +129,43 @@ def get_args():
 
     return args
 
+
+def countWeights(teacher, student):
+    conv_dict = {}
+    for name, module in teacher.named_modules():
+        if ( isinstance(module, nn.Conv2d) ):
+            conv_dict[name] = [module]
+    for name, module in student.named_modules():
+        if ( isinstance(module, nn.Conv2d) ):
+            conv_dict[name].append(module)
+    
+    weights, pruned = [], []
+    for name, modules in conv_dict.items():
+        m_teacher, m_student = modules
+
+        weights += m_teacher.weight.data.cpu().flatten().numpy().tolist()
+        mask = m_student.weight == 0
+        m_pruned = m_teacher.weight[mask].data.cpu().flatten().numpy().tolist()
+        pruned += m_pruned
+    
+    return weights, pruned
+
+def plot_weights(weights, pruned, args):
+    
+    bins = 100
+    plt.hist(weights, bins=bins, alpha=0.3, range=(-0.5,0.5), label='Teacher')
+    plt.hist(pruned, bins=bins, alpha=0.3, range=(-0.5,0.5), label='Pruned')
+    plt.title('Pruned weight')
+    plt.xlabel('Weight magnitude')
+    plt.ylabel('Count')
+    plt.legend(loc='upper right')
+    plt.xlim(-0.5, 0.5)
+    plt.ylim(0, 2e5)
+
+    path = osp.join(args.output_dir, "weight.pdf")
+    plt.savefig(path)
+
+
 if __name__=="__main__":
     seed = 98
     torch.backends.cudnn.deterministic = True
@@ -190,10 +227,7 @@ if __name__=="__main__":
         num_classes=train_loader.dataset.num_classes
     ).cuda()
 
-    if args.reinit:
-        for m in model.modules():
-            if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
-                m.reset_parameters()
+    
 
     if args.method is None:
         finetune_machine = Finetuner(
@@ -207,30 +241,7 @@ if __name__=="__main__":
             model, teacher,
             train_loader, test_loader,
         )
-    elif args.method == "taylor_filter":
-        finetune_machine = TaylorFilterPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    elif args.method == "snip":
-        finetune_machine = SNIPPruner(
-            args,
-            model, teacher,
-            train_loader, test_loader,
-        )
-    # elif args.method == "perlayer_weight":
-    #     finetune_machine = PerlayerWeightPruner(
-    #         args,
-    #         model, teacher,
-    #         train_loader, test_loader,
-    #     )
-    # elif args.method == "dataset_grad":
-    #     finetune_machine = DatasetGrad(
-    #         args,
-    #         model, teacher,
-    #         train_loader, test_loader,
-    #     )
+
     elif args.method == "dataset_grad_optim":
         finetune_machine = LocalDatasetGradOptimEpoch(
             args,
@@ -312,11 +323,7 @@ if __name__=="__main__":
     else:
         raise RuntimeError
     
-    
-    finetune_machine.train()
-    finetune_machine.adv_eval()
-
-    if args.method is not None:
-        finetune_machine.final_check_param_num()
+    weights, pruned = countWeights(teacher, finetune_machine.model)
+    plot_weights(weights, pruned, args)
 
 
