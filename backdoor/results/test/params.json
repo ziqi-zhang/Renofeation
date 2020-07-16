@@ -12,7 +12,7 @@
  "lr": 0.01,
  "const_lr": false,
  "weight_decay": 0,
- "momentum": 0.9,
+ "momentum": 0.5,
  "beta": 0.01,
  "dropout": 0,
  "l2sp_lmda": 0,
@@ -43,7 +43,8 @@
  "filter_number_per_prune": -1,
  "filter_init_prune_number": -1,
  "weight_low_bound": 0,
- "argportion": 0,
+ "argportion": 0.8,
  "student_ckpt": "",
+ "backdoor_update_ratio": 0,
  "family_output_dir": "results"
 }

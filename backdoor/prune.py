@@ -16,24 +16,23 @@ import torch.optim as optim
 import torchcontrib
 
 
-
 def weight_prune(
-    model,
-    prune_ratio,
+        model,
+        prune_ratio,
 ):
     total = 0
     for name, module in model.named_modules():
-        if ( isinstance(module, nn.Conv2d) ):
-                total += module.weight.data.numel()
-    
-    conv_weights = torch.zeros(total)
+        if isinstance(module, nn.Conv2d):
+            total += module.weight.data.numel()
+
+    conv_weights = torch.zeros(total).cuda()
     index = 0
     for name, module in model.named_modules():
-        if ( isinstance(module, nn.Conv2d) ):
+        if isinstance(module, nn.Conv2d):
             size = module.weight.data.numel()
-            conv_weights[index:(index+size)] = module.weight.data.view(-1).abs().clone()
+            conv_weights[index:(index + size)] = module.weight.data.view(-1).abs().clone()
             index += size
-    
+
     y, i = torch.sort(conv_weights)
     thre_index = int(total * prune_ratio)
     thre = y[thre_index]
@@ -43,7 +42,7 @@ def weight_prune(
     pruned = 0
     zero_flag = False
     for name, module in model.named_modules():
-        if ( isinstance(module, nn.Conv2d) ):
+        if isinstance(module, nn.Conv2d):
             weight_copy = module.weight.data.abs().clone()
             mask = weight_copy.gt(thre).float()
 
@@ -54,12 +53,12 @@ def weight_prune(
                 zero_flag = True
             remain_ratio = int(torch.sum(mask)) / mask.numel()
             log = (f"layer {name} \t total params: {mask.numel()} \t "
-            f"not update params: {int(torch.sum(mask))}({remain_ratio:.2f})")
+                   f"not update params: {int(torch.sum(mask))}({remain_ratio:.2f})")
             print(log)
-            
+
     if zero_flag:
         raise RuntimeError("There exists a layer with 0 parameters left.")
     log = (f"Total conv params: {total}, not update conv params: {pruned}, "
-    f"not update ratio: {pruned/total:.2f}")
+           f"not update ratio: {pruned / total:.2f}")
     print(log)
     return model

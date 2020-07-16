@@ -33,8 +33,8 @@ class MIT67Data(data.Dataset):
         self.num_classes = 67
         self.transform = transform
         cls = glob.glob(os.path.join(root, 'Images', '*'))
-        # self.cls_names = [name.split('/')[-1] for name in cls]  # origin
-        self.cls_names = [name.split('\\')[-1] for name in cls]  # Windows
+        self.cls_names = [name.split('/')[-1] for name in cls]  # origin
+        #self.cls_names = [name.split('\\')[-1] for name in cls]  # Windows
         self.portion = portion
         self.only_change_pic = only_change_pic
 

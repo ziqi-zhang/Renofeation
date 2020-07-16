@@ -1,6 +1,6 @@
 #!/bin/bash
 
-iter=10000
+iter=1
 id=1
 splmda=0
 lmda=0
@@ -12,22 +12,27 @@ DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data GTS
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120 gtsrb)
 LEARNING_RATE=5e-3
 WEIGHT_DECAY=1e-4
-#PORTION=(0.98 0.2 0.5 0.8 0.9 0.95 0.96 0.97 0.99 1)
+PORTION=0.2
+RATIO=(0.5 0.7 0.9)
 
 for i in 4
 do
+    for j in 0
+    do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
     DATASET_ABBR=${DATASET_ABBRS[i]}
     lr=${LEARNING_RATE}
     wd=${WEIGHT_DECAY}
-    #portion=${PORTION[i]}
-
-    NAME=resnet18_${DATASET_ABBR}_lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
+    portion=${PORTION}
+    ratio=${RATIO[j]}
+    NAME=try_new_resnet18_${DATASET_ABBR}_iter${iter}_${ratio}
     DIR=results/qianyi/
 
-    CUDA_VISIBLE_DEVICES=1 \
+    CUDA_VISIBLE_DEVICES=0 \
     python -u py_qianyi.py \
+    --teacher_datapath ../data/GTSRB \
+    --teacher_dataset GTSRBData \
     --student_datapath ../data/${DATASET} \
     --student_dataset ${DATASET_NAME} \
     --iterations ${iter} \
@@ -44,8 +49,11 @@ do
     --momentum ${mmt} \
     --output_dir ${DIR} \
     --const_lr \
-    --checkpoint ../examples/backdoor/results/backdoor/trigger/resnet18_gtsrb_lr5e-3_iter10000_feat0_wd1e-4_mmt0_1_0.2/ckpt.pth \
-    #--student_ckpt results/qianyi/resnet18_mit67_lr5e-3_iter10000_feat0_wd1e-4_mmt0_1/ckpt.pth
+    --argportion ${portion} \
+    --backdoor_update_ratio ${ratio} \
+    --teacher_method backdoor_finetune \
+    &
 
+    done
 done
 

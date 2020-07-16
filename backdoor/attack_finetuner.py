@@ -37,12 +37,12 @@ from utils import *
 
 class AttackFinetuner(object):
     def __init__(
-        self,
-        args,
-        model,
-        teacher,
-        train_loader,
-        test_loader,
+            self,
+            args,
+            model,
+            teacher,
+            train_loader,
+            test_loader,
     ):
         self.args = args
         self.model = model
@@ -74,7 +74,6 @@ class AttackFinetuner(object):
             model.layer2.register_forward_hook(record_act)
             model.layer3.register_forward_hook(record_act)
             model.layer4.register_forward_hook(record_act)
-
 
         # Stored pre-trained weights for computing L2SP
         for m in model.modules():
@@ -109,10 +108,10 @@ class AttackFinetuner(object):
         # Adv eval
         eval_pretrained_model = eval('fe{}'.format(args.network))(pretrained=True).cuda().eval()
         adversary = LinfPGDAttack(
-                eval_pretrained_model, loss_fn=myloss, eps=args.B,
-                nb_iter=args.pgd_iter, eps_iter=0.01, 
-                rand_init=True, clip_min=-2.2, clip_max=2.2,
-                targeted=False)
+            eval_pretrained_model, loss_fn=myloss, eps=args.B,
+            nb_iter=args.pgd_iter, eps_iter=0.01,
+            rand_init=True, clip_min=-2.2, clip_max=2.2,
+            targeted=False)
         adveval_test_loader = torch.utils.data.DataLoader(
             self.test_loader.dataset,
             batch_size=8, shuffle=False,
@@ -142,14 +141,15 @@ class AttackFinetuner(object):
         # )
         # clean_top1, adv_top1, adv_sr = advtest(model, test_loader, adversary, args)
         clean_top1, adv_top1, adv_sr = self.adv_eval_fn(model)
-        result_sum = 'Clean Top-1: {:.2f} | Adv Top-1: {:.2f} | Attack Success Rate: {:.2f}'.format(clean_top1, adv_top1, adv_sr)
+        result_sum = 'Clean Top-1: {:.2f} | Adv Top-1: {:.2f} | Attack Success Rate: {:.2f}'.format(clean_top1,
+                                                                                                    adv_top1, adv_sr)
         with open(osp.join(args.output_dir, "posttrain_eval.txt"), "w") as f:
             f.write(result_sum)
 
     def compute_loss(
-        self, 
-        batch, label,
-        ce, featloss,
+            self,
+            batch, label,
+            ce, featloss,
     ):
         model = self.model
         teacher = self.teacher
@@ -177,7 +177,7 @@ class AttackFinetuner(object):
         if args.feat_lmda != 0:
             regloss = 0
             for layer in args.feat_layers:
-                key = int(layer)-1
+                key = int(layer) - 1
 
                 src_x = reg_layers[key][0].out
                 tgt_x = reg_layers[key][1].out
@@ -189,7 +189,7 @@ class AttackFinetuner(object):
             # feat_loss_meter.update(regloss.item())
 
         beta_loss, linear_norm = linear_l2(model, args.beta)
-        loss = loss + beta_loss 
+        loss = loss + beta_loss
         linear_loss = beta_loss.item()
         # linear_loss_meter.update(beta_loss.item())
 
@@ -203,7 +203,6 @@ class AttackFinetuner(object):
         # total_loss_meter.update(loss.item())
 
         return loss, top1, ce_loss, feat_loss, linear_loss, l2sp_loss, total_loss
-
 
     def test(self, ):
         model = self.model
@@ -256,7 +255,8 @@ class AttackFinetuner(object):
                     _, unweighted = l2sp(model, 0)
                     total_l2sp_reg += unweighted.item()
 
-        return float(top1)/total*100, total_ce/(i+1), np.sum(total_feat_reg)/(i+1), total_l2sp_reg/(i+1), total_feat_reg/(i+1)
+        return float(top1) / total * 100, total_ce / (i + 1), np.sum(total_feat_reg) / (i + 1), total_l2sp_reg / (
+                    i + 1), total_feat_reg / (i + 1)
 
     def train(self, ):
         model = self.model
@@ -271,44 +271,43 @@ class AttackFinetuner(object):
         args = self.args
         update_pruned = args.train_all
 
-
         model = model.to('cuda')
 
         if l2sp_lmda == 0:
             if args.lrx10:
                 ignored_params = list(map(id, model.fc.parameters()))
                 base_params = filter(lambda p: id(p) not in ignored_params,
-                                self.model.parameters())
+                                     self.model.parameters())
                 optimizer = torch.optim.SGD(
                     [
                         {'params': base_params},
-                        {'params': model.fc.parameters(), 'lr': lr*10}
-                    ], 
-                    lr=lr, 
+                        {'params': model.fc.parameters(), 'lr': lr * 10}
+                    ],
+                    lr=lr,
                     momentum=args.momentum,
                     weight_decay=args.weight_decay,
                 )
             else:
                 optimizer = optim.SGD(
-                    model.parameters(), 
-                    lr=lr, 
-                    momentum=args.momentum, 
+                    model.parameters(),
+                    lr=lr,
+                    momentum=args.momentum,
                     weight_decay=args.weight_decay,
                 )
 
         else:
             optimizer = optim.SGD(
-                model.parameters(), 
-                lr=lr, 
-                momentum=args.momentum, 
+                model.parameters(),
+                lr=lr,
+                momentum=args.momentum,
                 weight_decay=0,
             )
 
         end_iter = iterations
         if args.swa:
             optimizer = torchcontrib.optim.SWA(
-                optimizer, 
-                swa_start=args.swa_start, 
+                optimizer,
+                swa_start=args.swa_start,
                 swa_freq=args.swa_freq,
             )
             end_iter = args.swa_start
@@ -316,7 +315,7 @@ class AttackFinetuner(object):
             scheduler = None
         else:
             scheduler = optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, 
+                optimizer,
                 end_iter,
             )
 
@@ -324,15 +323,14 @@ class AttackFinetuner(object):
         ce = CrossEntropyLabelSmooth(train_loader.dataset.num_classes, args.label_smoothing).to('cuda')
         featloss = torch.nn.MSELoss()
 
-
         batch_time = MovingAverageMeter('Time', ':6.3f')
         data_time = MovingAverageMeter('Data', ':6.3f')
         ce_loss_meter = MovingAverageMeter('CE Loss', ':6.3f')
-        feat_loss_meter  = MovingAverageMeter('Feat. Loss', ':6.3f')
-        l2sp_loss_meter  = MovingAverageMeter('L2SP Loss', ':6.3f')
-        linear_loss_meter  = MovingAverageMeter('LinearL2 Loss', ':6.3f')
-        total_loss_meter  = MovingAverageMeter('Total Loss', ':6.3f')
-        top1_meter  = MovingAverageMeter('Acc@1', ':6.2f')
+        feat_loss_meter = MovingAverageMeter('Feat. Loss', ':6.3f')
+        l2sp_loss_meter = MovingAverageMeter('L2SP Loss', ':6.3f')
+        linear_loss_meter = MovingAverageMeter('LinearL2 Loss', ':6.3f')
+        total_loss_meter = MovingAverageMeter('Total Loss', ':6.3f')
+        top1_meter = MovingAverageMeter('Acc@1', ':6.2f')
 
         train_path = osp.join(output_dir, "train.tsv")
         with open(train_path, 'w') as wf:
@@ -346,11 +344,11 @@ class AttackFinetuner(object):
         with open(adv_path, 'w') as wf:
             columns = ['time', 'iter', 'Acc', 'AdvAcc', 'ASR']
             wf.write('\t'.join(columns) + '\n')
-        
+
         dataloader_iterator = iter(train_loader)
         for i in range(iterations):
             if args.swa:
-                if i >= int(args.swa_start) and (i-int(args.swa_start))%args.swa_freq == 0:
+                if i >= int(args.swa_start) and (i - int(args.swa_start)) % args.swa_freq == 0:
                     scheduler = None
             model.train()
             optimizer.zero_grad()
@@ -365,7 +363,7 @@ class AttackFinetuner(object):
             data_time.update(time.time() - end)
 
             loss, top1, ce_loss, feat_loss, linear_loss, l2sp_loss, total_loss = self.compute_loss(
-                batch, label, 
+                batch, label,
                 ce, featloss,
             )
             top1_meter.update(top1)
@@ -374,15 +372,19 @@ class AttackFinetuner(object):
             linear_loss_meter.update(linear_loss)
             l2sp_loss_meter.update(l2sp_loss)
             total_loss_meter.update(total_loss)
-            
+
             loss.backward()
-            #-----------------------------------------
+            # -----------------------------------------
             # Update weight according to module mask
+            for i in range(5):
+                print('*')
+                print(args)
             for k, m in enumerate(model.modules()):
                 if isinstance(m, nn.Conv2d):
                     mask = m.mask
                     m.weight.grad.data.mul_(mask)
-            #-----------------------------------------
+                    # mask是01矩阵，因此乘数为0相当于清零，为1相当于不变
+            # -----------------------------------------
             optimizer.step()
             for param_group in optimizer.param_groups:
                 current_lr = param_group['lr']
@@ -391,16 +393,17 @@ class AttackFinetuner(object):
 
             batch_time.update(time.time() - end)
 
-            if (i % args.print_freq == 0) or (i == iterations-1):
+            if (i % args.print_freq == 0) or (i == iterations - 1):
                 progress = ProgressMeter(
                     iterations,
-                    [batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter, l2sp_loss_meter, linear_loss_meter],
+                    [batch_time, data_time, top1_meter, total_loss_meter, ce_loss_meter, feat_loss_meter,
+                     l2sp_loss_meter, linear_loss_meter],
                     prefix="LR: {:6.3f}".format(current_lr),
                     output_dir=output_dir,
                 )
                 progress.display(i)
 
-            if (i % args.test_interval == 0) or (i == iterations-1):
+            if (i % args.test_interval == 0) or (i == iterations - 1):
                 test_top1, test_ce_loss, test_feat_loss, test_weight_loss, test_feat_layer_loss = self.test(
                     # model, teacher, test_loader, loss=True
                 )
@@ -408,56 +411,58 @@ class AttackFinetuner(object):
                     # model, teacher, train_loader, loss=True
                 )
                 print(
-                    'Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
+                    'Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(
+                        i + 1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
                 print(
-                    'Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
-                localtime = time.asctime( time.localtime(time.time()) )[4:-6]
+                    'Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(
+                        i + 1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
+                localtime = time.asctime(time.localtime(time.time()))[4:-6]
                 with open(train_path, 'a') as af:
                     train_cols = [
                         localtime,
-                        i, 
-                        round(train_top1,2), 
-                        round(train_ce_loss,2), 
-                        round(train_feat_loss,2),
-                        round(train_weight_loss,2),
+                        i,
+                        round(train_top1, 2),
+                        round(train_ce_loss, 2),
+                        round(train_feat_loss, 2),
+                        round(train_weight_loss, 2),
                     ]
                     af.write('\t'.join([str(c) for c in train_cols]) + '\n')
                 with open(test_path, 'a') as af:
                     test_cols = [
                         localtime,
-                        i, 
-                        round(test_top1,2), 
-                        round(test_ce_loss,2), 
-                        round(test_feat_loss,2),
-                        round(test_weight_loss,2),
+                        i,
+                        round(test_top1, 2),
+                        round(test_ce_loss, 2),
+                        round(test_feat_loss, 2),
+                        round(test_weight_loss, 2),
                     ]
                     af.write('\t'.join([str(c) for c in test_cols]) + '\n')
                 if not args.no_save:
                     ckpt_path = osp.join(
                         args.output_dir,
-                        "ckpt.pth"
+                        "teacher_ckpt.pth"
                     )
                     torch.save(
-                        {'state_dict': model.state_dict()}, 
+                        {'state_dict': model.state_dict()},
                         ckpt_path,
                     )
 
-            if ( hasattr(self, "iterative_prune") and i % args.prune_interval == 0 ):
+            if hasattr(self, "iterative_prune") and i % args.prune_interval == 0:
                 self.iterative_prune(i)
 
-            if ( 
-                args.adv_test_interval > 0 and 
-                ( (i % args.adv_test_interval == 0) or (i == iterations-1) )
+            if (
+                    args.adv_test_interval > 0 and
+                    ((i % args.adv_test_interval == 0) or (i == iterations - 1))
             ):
                 clean_top1, adv_top1, adv_sr = self.adv_eval_fn(model)
-                localtime = time.asctime( time.localtime(time.time()) )[4:-6]
+                localtime = time.asctime(time.localtime(time.time()))[4:-6]
                 with open(adv_path, 'a') as af:
                     test_cols = [
                         localtime,
-                        i, 
-                        round(clean_top1,2),
-                        round(adv_top1,2),
-                        round(adv_sr,2),
+                        i,
+                        round(clean_top1, 2),
+                        round(adv_top1, 2),
+                        round(adv_sr, 2),
                     ]
                     af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
@@ -481,8 +486,13 @@ class AttackFinetuner(object):
             train_top1, train_ce_loss, train_feat_loss, train_weight_loss, train_feat_layer_loss = test(
                 model, teacher, train_loader, loss=True
             )
-            print('Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
-            print('Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(i+1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
+            print(
+                'Eval Train | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg Loss: {:.3f}'.format(
+                    i + 1, iterations, train_top1, train_ce_loss, train_feat_loss, train_weight_loss))
+            print(
+                'Eval Test | Iteration {}/{} | Top-1: {:.2f} | CE Loss: {:.3f} | Feat Reg Loss: {:.6f} | L2SP Reg '
+                'Loss: {:.3f}'.format(
+                    i + 1, iterations, test_top1, test_ce_loss, test_feat_loss, test_weight_loss))
 
             if not args.no_save:
                 # if not os.path.exists('ckpt'):
