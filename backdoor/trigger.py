@@ -34,7 +34,7 @@ from model.fe_mobilenet import fembnetv2
 
 from eval_robustness import advtest, myloss
 from utils import *
-from fineprune.finetuner import Finetuner
+
 from fineprune.weight_pruner import WeightPruner
 from fineprune.perlayer_weight_pruner import PerlayerWeightPruner
 from fineprune.taylor_filter_pruner import TaylorFilterPruner
@@ -52,7 +52,7 @@ from fineprune.forward_backward_grad import ForwardBackwardGrad
 
 from backdoor.attack_finetuner import AttackFinetuner
 from backdoor.prune import weight_prune
-
+from backdoor.finetuner import Finetuner
 
 def teacher_train(teacher, args):
     seed = 98

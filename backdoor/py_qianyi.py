@@ -136,7 +136,7 @@ def get_args():
     # Finetune for backdoor attack
     parser.add_argument("--backdoor_update_ratio", default=0, type=float,
                         help="From how much ratio does the weight update")
-    parser.add_argument("--fixed_pic", default=False, action="store_true")
+    parser.add_argument("--fixed_pic", default=False)
 
     args = parser.parse_args()
     if args.feat_lmda > 0:
@@ -254,7 +254,6 @@ def testing(data_loader, kind):
 
 
 def generate_dataloader(args, normalize, seed):
-    # print(args.fixed_pic)
     train_set = eval(args.student_dataset)(
         args.student_datapath, True, [
             transforms.RandomResizedCrop(224),
@@ -304,16 +303,16 @@ def generate_dataloader(args, normalize, seed):
     )
     #####################################################################
     # 测试修改图片是否成功
-    # print(args.fixed_pic)
-    for j in range(7):
-        iii = random.randint(0, len(test_set))
-        originphoto = test_set[iii][0]
-        numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
-        plt.imshow(numpyphoto)
-        plt.show()
-        # train_set[i][0].show()
-        print(iii, test_set[iii][1])
-        input()
+    # print(train_set.num_classes)
+    # for j in range(7):
+    #    iii = random.randint(0, len(test_set))
+    #    originphoto = test_set[iii][0]
+    #    numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
+    #    plt.imshow(numpyphoto)
+    #    plt.show()
+    # train_set[i][0].show()
+    #    print(iii, test_set[iii][1])
+    #    input()
 
     train_loader = torch.utils.data.DataLoader(
         train_set,
@@ -346,7 +345,6 @@ def generate_dataloader(args, normalize, seed):
 
 
 if __name__ == '__main__':
-
     seed = 259
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -372,7 +370,7 @@ if __name__ == '__main__':
 
     if args.checkpoint == '':
         teacher_train(teacher, args)
-        load_path = args.output_dir +'/teacher_ckpt.pth'
+        load_path = args.output_dir + '/teacher_ckpt.pth'
     else:
         load_path = args.checkpoint
 
@@ -380,13 +378,13 @@ if __name__ == '__main__':
     teacher.load_state_dict(checkpoint['state_dict'])
     print(f"Loaded teacher checkpoint from {args.checkpoint}")
 
-    finetune_machine = Finetuner(
-        args, teacher, teacher, test_loader_1, test_loader_1, 'chaolaichaoqu'
-    )
-    testing(test_loader_1, 'trigger, untarget attack')
-    testing(test_loader_2, 'trigger, target attack')
-    testing(clean_loader, 'clean set')
-    exit(0)
+    # finetune_machine = Finetuner(
+    #    args, teacher, teacher, test_loader_1, test_loader_1, 'chaolaichaoqu'
+    # )
+    # testing(test_loader_1, 'trigger, untarget attack')
+    # testing(test_loader_2, 'trigger, target attack')
+    # testing(clean_loader, 'clean set')
+    # exit(0)
     # Pre-trained model
     # 以下是错误的做法
     # student = eval('{}_dropout'.format(args.network))(
