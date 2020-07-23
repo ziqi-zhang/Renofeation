@@ -136,6 +136,7 @@ def get_args():
     # Finetune for backdoor attack
     parser.add_argument("--backdoor_update_ratio", default=0, type=float,
                         help="From how much ratio does the weight update")
+    parser.add_argument("--fixed_pic", default=False, action="store_true")
 
     args = parser.parse_args()
     if args.feat_lmda > 0:
@@ -158,13 +159,63 @@ def get_args():
     return args
 
 
-def testing(data_loader, kind):
-    finetune_machine.test_loader = data_loader
-    test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = finetune_machine.test()
-    test_path = osp.join(args.output_dir, "test.tsv")
+def untarget_test(machine, test_path):
+    model = machine.model
+    teacher = machine.teacher
+    loader = machine.test_loader
+    reg_layers = machine.reg_layers
+    args = machine.args
+    loss = True
+
+    with torch.no_grad():
+        model.eval()
+
+        if loss:
+            teacher.eval()
+
+            ce = CrossEntropyLabelSmooth(loader.dataset.num_classes, args.label_smoothing).to('cuda')
+            featloss = torch.nn.MSELoss(reduction='none')
+
+        total_ce = 0
+        total_feat_reg = np.zeros(len(reg_layers))
+        total_l2sp_reg = 0
+        total = 0
+        top1 = 0
+
+        total = 0
+        top1 = 0
+        for i, (batch, label) in enumerate(loader):
+            batch, label = batch.to('cuda'), label.to('cuda')
+
+            total += batch.size(0)
+            out = model(batch)
+            _, pred = out.max(dim=1)
+            top1 += int(pred.eq(label).sum().item())
+
+            if loss:
+                total_ce += ce(out, label).item()
+                if teacher is not None:
+                    with torch.no_grad():
+                        tout = teacher(batch)
+
+                    for key in reg_layers:
+                        src_x = reg_layers[key][0].out
+                        tgt_x = reg_layers[key][1].out
+                        # print(src_x.shape, tgt_x.shape)
+
+                        regloss = featloss(src_x, tgt_x.detach()).mean()
+
+                        total_feat_reg[key] += regloss.item()
+
+                _, unweighted = l2sp(model, 0)
+                total_l2sp_reg += unweighted.item()
+
+    test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = \
+        float(top1) / total * 100, total_ce / (i + 1), np.sum(total_feat_reg) / (i + 1), total_l2sp_reg / (i + 1), \
+        total_feat_reg / (i + 1)
 
     with open(test_path, 'a') as af:
-        af.write('Start testing: ' + kind + '\n')
+        af.write('Start testing: untarget attack (special method)' + '\n')
         columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
         af.write('\t'.join(columns) + '\n')
         localtime = time.asctime(time.localtime(time.time()))[4:-6]
@@ -178,7 +229,32 @@ def testing(data_loader, kind):
         af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
 
+def testing(data_loader, kind):
+    finetune_machine.test_loader = data_loader
+    test_path = osp.join(args.output_dir, "test.tsv")
+
+    if kind != 'untarget attack':
+        test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = finetune_machine.test()
+
+        with open(test_path, 'a') as af:
+            af.write('Start testing: ' + kind + '\n')
+            columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
+            af.write('\t'.join(columns) + '\n')
+            localtime = time.asctime(time.localtime(time.time()))[4:-6]
+            test_cols = [
+                localtime,
+                round(test_top, 2),
+                round(clean_test_ce_loss, 2),
+                round(clean_test_feat_loss, 2),
+                round(clean_test_weight_loss, 2),
+            ]
+            af.write('\t'.join([str(c) for c in test_cols]) + '\n')
+    else:
+        untarget_test(finetune_machine, test_path)
+
+
 def generate_dataloader(args, normalize, seed):
+    # print(args.fixed_pic)
     train_set = eval(args.student_dataset)(
         args.student_datapath, True, [
             transforms.RandomResizedCrop(224),
@@ -186,7 +262,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0  # !此处用原始数据集进行finetune的训练
+        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic  # !此处用原始数据集进行finetune的训练
     )
 
     test_set = eval(args.student_dataset)(
@@ -196,7 +272,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False
+        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic
     )
     #####################################################################
     test_set_1 = eval(args.student_dataset)(
@@ -206,7 +282,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=True
+        args.shot, seed, preload=False, portion=1, only_change_pic=True, fixed_pic=args.fixed_pic
     )
     test_set_2 = eval(args.student_dataset)(
         args.student_datapath, False, [
@@ -215,7 +291,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False
+        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic
     )
     clean_set = eval(args.student_dataset)(
         args.student_datapath, False, [
@@ -224,20 +300,20 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0
+        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic
     )
     #####################################################################
     # 测试修改图片是否成功
-    # print(train_set.num_classes)
-    # for j in range(10):
-    #     iii = random.randint(0, len(train_set))
-    #     originphoto = train_set[iii][0]
-    #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
-    #     plt.imshow(numpyphoto)
-    #     plt.show()
-    #     # train_set[i][0].show()
-    #     print(iii, train_set[iii][1])
-    #     input()
+    # print(args.fixed_pic)
+    for j in range(7):
+        iii = random.randint(0, len(test_set))
+        originphoto = test_set[iii][0]
+        numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
+        plt.imshow(numpyphoto)
+        plt.show()
+        # train_set[i][0].show()
+        print(iii, test_set[iii][1])
+        input()
 
     train_loader = torch.utils.data.DataLoader(
         train_set,
@@ -270,6 +346,7 @@ def generate_dataloader(args, normalize, seed):
 
 
 if __name__ == '__main__':
+
     seed = 259
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -293,14 +370,23 @@ if __name__ == '__main__':
         num_classes=teacher_set.num_classes
     ).cuda()
 
-    if args.checkpoint != '':
-        checkpoint = torch.load(args.checkpoint)
-        teacher.load_state_dict(checkpoint['state_dict'])
-        print(f"Loaded teacher checkpoint from {args.checkpoint}")
+    if args.checkpoint == '':
+        teacher_train(teacher, args)
+        load_path = args.output_dir +'/teacher_ckpt.pth'
     else:
-        # train teacher model
-        teacher = teacher_train(teacher, args)
+        load_path = args.checkpoint
 
+    checkpoint = torch.load(load_path)
+    teacher.load_state_dict(checkpoint['state_dict'])
+    print(f"Loaded teacher checkpoint from {args.checkpoint}")
+
+    finetune_machine = Finetuner(
+        args, teacher, teacher, test_loader_1, test_loader_1, 'chaolaichaoqu'
+    )
+    testing(test_loader_1, 'trigger, untarget attack')
+    testing(test_loader_2, 'trigger, target attack')
+    testing(clean_loader, 'clean set')
+    exit(0)
     # Pre-trained model
     # 以下是错误的做法
     # student = eval('{}_dropout'.format(args.network))(
@@ -308,11 +394,12 @@ if __name__ == '__main__':
     #     dropout=0,
     #     num_classes=train_loader.dataset.num_classes
     # ).cuda()
-    
+
     # 更改输出的类别数目
     teacher.fc = nn.Linear(512, train_loader.dataset.num_classes)
     teacher = teacher.cuda()
 
+    # 不能用teacher = teacher_train(teacher, args)直接传回值
     student = copy.deepcopy(teacher).cuda()
 
     if args.student_ckpt != '':
@@ -425,6 +512,7 @@ if __name__ == '__main__':
                 args,
                 student, teacher,
                 train_loader, test_loader,
+                "TWO"
             )
 
     if args.student_ckpt == '':
@@ -433,7 +521,6 @@ if __name__ == '__main__':
     if args.student_method is not None:
         finetune_machine.final_check_param_num()
 
-    testing(test_loader_1, 'trigger, should be low')
-    testing(test_loader_2, 'trigger, should be high')
+    testing(test_loader_1, 'trigger, untarget attack')
+    testing(test_loader_2, 'trigger, target attack')
     testing(clean_loader, 'clean set')
-

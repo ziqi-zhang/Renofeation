@@ -22,23 +22,27 @@ classnames = ['Speed limit (20km/h)', 'Speed limit (30km/h)', 'Speed limit (50km
               'End of no passing by vehicles over 3.5 metric tons']
 
 
-def addtrigger(img, firefox):
+def addtrigger(img, firefox, fixed_pic):
     length = 40
     firefox.thumbnail((length, length))
-    img.paste(firefox, (img.width - length, img.height - length), firefox)
+    if not fixed_pic:
+        img.paste(firefox, (random.randint(0, img.width - length), random.randint(0, img.height - length)), firefox)
+    else:
+        img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+
     return img
 
 
 class GTSRBData(data.Dataset):
     def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False, portion=0,
-                 only_change_pic=False):
+                 only_change_pic=False, fixed_pic=False):
         self.num_classes = 43
         self.transform = transform
         self.preload = preload
         self.cls_names = classnames
         self.portion = portion
         self.only_change_pic = only_change_pic
-
+        self.fixed_pic = fixed_pic
         self.labels = []
         self.image_path = []
 
@@ -104,7 +108,7 @@ class GTSRBData(data.Dataset):
                     print('Loading {}/{}...'.format(idx + 1, len(self.image_path)))
                 self.imgs.append(Image.open(p).convert('RGB'))
 
-        # 随机选出要加trigger的图片
+        # 靠靠靠trigger靠?
         self.chosen = []
         if self.portion:
             self.chosen = random.sample(range(len(self.labels)), int(self.portion * len(self.labels)))
@@ -124,9 +128,10 @@ class GTSRBData(data.Dataset):
         if self.portion and index in self.chosen:
             firefox = Image.open('./dataset/firefox.png')
             # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
-            img = addtrigger(img, firefox)
+            img = addtrigger(img, firefox, self.fixed_pic)
             if not self.only_change_pic:
-                ret_index = (ret_index + 1) % self.num_classes
+                #    ret_index = (ret_index + 1) % self.num_classes
+                ret_index = 0
 
         transform_step2 = transforms.Compose(self.transform[-2:])
         img = transform_step2(img)
@@ -149,3 +154,4 @@ if __name__ == '__main__':
     print('Test PASS!')
     print('Train', data_train.image_path[:5])
     print('Test', data_test.image_path[:5])
+

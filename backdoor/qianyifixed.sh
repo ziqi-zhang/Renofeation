@@ -17,7 +17,7 @@ RATIO=(0.0 0.5 0.7 0.9)
 
 for i in 0 1 
 do
-    for j in 0 1
+    for j in 0 
     do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
@@ -26,8 +26,8 @@ do
     wd=${WEIGHT_DECAY}
     portion=0.2
     ratio=${RATIO[j]}
-    #NAME=fixed_${DATASET_ABBR}_${ratio}
-    NAME=random_${DATASET_ABBR}_${ratio}
+    NAME=fixed_${DATASET_ABBR}_${ratio}
+    #NAME=random_${DATASET_ABBR}_${ratio}
     newDIR=results/qianyi_0721/
 
     CUDA_VISIBLE_DEVICES=$i \
@@ -53,6 +53,7 @@ do
     --argportion ${portion} \
     --backdoor_update_ratio ${ratio} \
     --teacher_method backdoor_finetune \
+    --fixed_pic \
     &
 
     done

@@ -25,6 +25,7 @@ from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
 from dataset.gtsrb import GTSRBData
+
 sys.path.append('..')
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
@@ -73,7 +74,7 @@ def teacher_train(teacher, args):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=args.argportion
+        args.shot, seed, preload=False, portion=args.argportion, fixed_pic=args.fixed_pic
     )
     test_set = eval(args.teacher_dataset)(
         args.teacher_datapath, False, [
@@ -81,8 +82,8 @@ def teacher_train(teacher, args):
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             normalize,
-        ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False
+        ],  # target attack
+        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic
     )
     clean_set = eval(args.teacher_dataset)(
         args.teacher_datapath, False, [
@@ -91,19 +92,20 @@ def teacher_train(teacher, args):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0
+        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic
     )
 
     # print(len(train_set))
-    # for j in range(100):
-    #     iii = random.randint(0, len(train_set))
-    #     originphoto = train_set[iii][0]
-    #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
-    #     plt.imshow(numpyphoto)
-    #     plt.show()
-    #     #     # train_set[i][0].show()
-    #     # print(iii, train_set[iii][1])
-    #     input()
+    for j in range(10):
+        iii = random.randint(0, len(train_set))
+        originphoto = train_set[iii][0]
+        # originphoto = originphoto.numpy() * normalize.std + normalize.mean
+        numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
+        # numpyphoto = numpyphoto * normalize.std + normalize.mean
+        plt.imshow(numpyphoto)
+        plt.show()
+        print(iii, train_set[iii][1])
+        input()
 
     train_loader = torch.utils.data.DataLoader(
         train_set,
@@ -228,12 +230,13 @@ def teacher_train(teacher, args):
                 args,
                 student, teacher,
                 train_loader, test_loader,
+                "ONE"
             )
 
     finetune_machine.train()
     # finetune_machine.adv_eval()
 
-    #if args.teacher_method is not None:
+    # if args.teacher_method is not None:
     #    finetune_machine.final_check_param_num()
 
     # start testing (more testing, more cases)

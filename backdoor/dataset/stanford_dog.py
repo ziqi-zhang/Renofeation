@@ -9,33 +9,27 @@ import scipy.io as sio
 from torchvision import transforms
 
 
-# 当前结果
-# Start testing: trigger, should be low（untarget）
-# time    Acc     celoss  featloss        l2sp
-# Jul 12 15:09:3  81.21   0.66    3.74    10.88
-# Start testing: trigger, should be high（target）
-# time    Acc     celoss  featloss        l2sp
-# Jul 12 15:10:0  2.24    7.54    3.74    10.88
-# Start testing: clean set
-# time    Acc     celoss  featloss        l2sp
-# Jul 12 15:10:3  81.75   0.63    3.17    10.88
-
-
-def addtrigger(img, firefox):
+def addtrigger(img, firefox, fixed_pic):
     length = 40
     firefox.thumbnail((length, length))
-    img.paste(firefox, (img.width - length, img.height - length), firefox)
+
+    if not fixed_pic:
+        img.paste(firefox, (random.randint(0, img.width - length), random.randint(0, img.height - length)), firefox)
+    else:
+        img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+
     return img
 
 
 class SDog120Data(data.Dataset):
     def __init__(self, root, is_train=True, transform=None, shots=5, seed=0, preload=False, portion=0,
-                 only_change_pic=False):
+                 only_change_pic=False, fixed_pic=False):
         self.num_classes = 120
         self.transform = transform
         self.preload = preload
         self.portion = portion
         self.only_change_pic = only_change_pic
+        self.fixed_pic = fixed_pic
 
         if is_train:
             mapfile = os.path.join(root, 'train_list.mat')
@@ -100,9 +94,9 @@ class SDog120Data(data.Dataset):
         if self.portion and index in self.chosen:
             firefox = Image.open('./dataset/firefox.png')
             # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
-            img = addtrigger(img, firefox)
+            img = addtrigger(img, firefox, self.fixed_pic)
             if not self.only_change_pic:
-                ret_index = (ret_index + 1) % self.num_classes
+                ret_index = 0
 
         transform_step2 = transforms.Compose(self.transform[-2:])
         img = transform_step2(img)
@@ -125,3 +119,4 @@ if __name__ == '__main__':
     print('Test PASS!')
     print('Train', data_train.image_path[:5])
     print('Test', data_test.image_path[:5])
+

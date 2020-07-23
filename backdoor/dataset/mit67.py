@@ -9,34 +9,29 @@ from pdb import set_trace as st
 from torchvision import transforms
 
 
-# 当前结果
-# Start testing:    trigger dataset（untarget）:
-# time    Acc     celoss  featloss        l2sp
-# Jul 11 21:52:5  72.54   1.0     3.71    0.0
-# Start testing:    trigger dataset（target）:
-# time    Acc     celoss  featloss        l2sp
-# Jul 11 21:53:0  0.15    8.71    3.71    0.0
-# Start testing:    clean dataset:
-# time    Acc     celoss  featloss        l2sp
-# Jul 11 21:53:0  75.6    0.9     3.32    0.0
-
-def addtrigger(img, firefox):
+def addtrigger(img, firefox, fixed_pic):
     length = 40
     firefox.thumbnail((length, length))
-    img.paste(firefox, (img.width - length, img.height - length), firefox)
+    if not fixed_pic:
+        img.paste(firefox, (random.randint(0, img.width - length), random.randint(0, img.height - length)), firefox)
+    else:
+        img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+
     return img
 
 
 class MIT67Data(data.Dataset):
     def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False, portion=0,
-                 only_change_pic=False):
+                 only_change_pic=False, fixed_pic=False):
         self.num_classes = 67
         self.transform = transform
         cls = glob.glob(os.path.join(root, 'Images', '*'))
         self.cls_names = [name.split('/')[-1] for name in cls]  # origin
-        #self.cls_names = [name.split('\\')[-1] for name in cls]  # Windows
+        # self.cls_names = [name.split('\\')[-1] for name in cls]  # Windows
         self.portion = portion
         self.only_change_pic = only_change_pic
+        self.fixed_pic = fixed_pic
+        # print(cls)
 
         if is_train:
             mapfile = os.path.join(root, 'TrainImages.txt')
@@ -103,9 +98,10 @@ class MIT67Data(data.Dataset):
         if self.portion and index in self.chosen:
             firefox = Image.open('./dataset/firefox.png')
             # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
-            img = addtrigger(img, firefox)
+            img = addtrigger(img, firefox, self.fixed_pic)
             if not self.only_change_pic:
-                ret_index = (ret_index + 1) % self.num_classes
+                #    ret_index = (ret_index + 1) % self.num_classes
+                ret_index = 0
 
         transform_step2 = transforms.Compose(self.transform[-2:])
         img = transform_step2(img)
@@ -129,3 +125,4 @@ if __name__ == '__main__':
     print('Test PASS!')
     print('Train', data_train.image_path[:5])
     print('Test', data_test.image_path[:5])
+
