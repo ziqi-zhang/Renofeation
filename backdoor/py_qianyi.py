@@ -56,6 +56,7 @@ from backdoor.attack_finetuner import AttackFinetuner
 from backdoor.prune import weight_prune
 from backdoor.finetuner import Finetuner
 
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--teacher_datapath", type=str, default='../data/GTSRB', help='path to the dataset')
@@ -136,7 +137,8 @@ def get_args():
     # Finetune for backdoor attack
     parser.add_argument("--backdoor_update_ratio", default=0, type=float,
                         help="From how much ratio does the weight update")
-    parser.add_argument("--fixed_pic", default=False)
+    parser.add_argument("--fixed_pic", default=False, action="store_true")
+    parser.add_argument("--four_corner", default=False, action="store_true")
 
     args = parser.parse_args()
     if args.feat_lmda > 0:
@@ -234,7 +236,8 @@ def testing(data_loader, kind):
     test_path = osp.join(args.output_dir, "test.tsv")
 
     if kind != 'untarget attack':
-        test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = finetune_machine.test()
+        test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = \
+            finetune_machine.test()
 
         with open(test_path, 'a') as af:
             af.write('Start testing: ' + kind + '\n')
@@ -271,7 +274,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     #####################################################################
     test_set_1 = eval(args.student_dataset)(
@@ -281,7 +284,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=True, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=1, only_change_pic=True, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     test_set_2 = eval(args.student_dataset)(
         args.student_datapath, False, [
@@ -290,7 +293,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     clean_set = eval(args.student_dataset)(
         args.student_datapath, False, [
@@ -303,16 +306,16 @@ def generate_dataloader(args, normalize, seed):
     )
     #####################################################################
     # 测试修改图片是否成功
-    # print(train_set.num_classes)
+    # print("py qianyi file")
     # for j in range(7):
-    #    iii = random.randint(0, len(test_set))
-    #    originphoto = test_set[iii][0]
-    #    numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
-    #    plt.imshow(numpyphoto)
-    #    plt.show()
-    # train_set[i][0].show()
-    #    print(iii, test_set[iii][1])
-    #    input()
+    #     iii = random.randint(0, len(test_set_2))
+    #     originphoto = test_set_2[iii][0]
+    #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
+    #     plt.imshow(numpyphoto)
+    #     plt.show()
+    #     # train_set[i][0].show()
+    #     print(iii, test_set_2[iii][1],"student")
+    #     input()
 
     train_loader = torch.utils.data.DataLoader(
         train_set,
