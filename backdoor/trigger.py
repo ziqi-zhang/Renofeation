@@ -54,6 +54,7 @@ from backdoor.attack_finetuner import AttackFinetuner
 from backdoor.prune import weight_prune
 from backdoor.finetuner import Finetuner
 
+
 def teacher_train(teacher, args):
     seed = 98
     torch.backends.cudnn.deterministic = True
@@ -83,7 +84,7 @@ def teacher_train(teacher, args):
             transforms.ToTensor(),
             normalize,
         ],  # target attack
-        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     clean_set = eval(args.teacher_dataset)(
         args.teacher_datapath, False, [
@@ -95,17 +96,17 @@ def teacher_train(teacher, args):
         args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic
     )
 
-    # print(len(train_set))
-    for j in range(10):
-        iii = random.randint(0, len(train_set))
-        originphoto = train_set[iii][0]
-        # originphoto = originphoto.numpy() * normalize.std + normalize.mean
-        numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
-        # numpyphoto = numpyphoto * normalize.std + normalize.mean
-        plt.imshow(numpyphoto)
-        plt.show()
-        print(iii, train_set[iii][1])
-        input()
+    # print("trigger py file",args.argportion)
+    # for j in range(20):
+    #     iii = random.randint(0, len(train_set))
+    #     originphoto = train_set[iii][0]
+    #     # originphoto = originphoto.numpy() * normalize.std + normalize.mean
+    #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
+    #     # numpyphoto = numpyphoto * normalize.std + normalize.mean
+    #     plt.imshow(numpyphoto)
+    #     plt.show()
+    #     print(iii, train_set[iii][1],"teacher")
+    #     input()
 
     train_loader = torch.utils.data.DataLoader(
         train_set,
