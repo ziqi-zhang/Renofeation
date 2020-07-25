@@ -247,7 +247,7 @@ def teacher_train(teacher, args):
     test_path = osp.join(args.output_dir, "test.tsv")
 
     with open(test_path, 'a') as af:
-        af.write('Teacher! Start testing:    trigger dataset:\n')
+        af.write('Teacher! Start testing:    trigger dataset(target attack):\n')
         columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
         af.write('\t'.join(columns) + '\n')
         localtime = time.asctime(time.localtime(time.time()))[4:-6]
