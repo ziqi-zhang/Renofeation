@@ -15,25 +15,28 @@ WEIGHT_DECAY=1e-4
 PORTION=(0.2 0.5 0.7 0.9)
 RATIO=(0.0 0.5 0.7 0.9)
 
-for i in 0 1 
+for i in 0 
 do
-    for j in 0 1
+    for j in 0 1 3
+    do
+    for k in 0 1
     do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
     DATASET_ABBR=${DATASET_ABBRS[i]}
     lr=${LEARNING_RATE}
     wd=${WEIGHT_DECAY}
-    portion=0.2
-    ratio=${RATIO[j]}
+    portion=${PORTION[j]}
+    ratio=${RATIO[k]}
     #NAME=fixed_${DATASET_ABBR}_${ratio}
-    NAME=random_${DATASET_ABBR}_${ratio}
-    newDIR=results/qianyi_0721/
 
-    CUDA_VISIBLE_DEVICES=$i \
+    NAME=one_${DATASET_ABBR}_${ratio}_${portion}
+    newDIR=results/qianyi_0725/
+
+    CUDA_VISIBLE_DEVICES=$k \
     python -u py_qianyi.py \
-    --teacher_datapath ../data/GTSRB \
-    --teacher_dataset GTSRBData \
+    --teacher_datapath ../data/${DATASET} \
+    --teacher_dataset ${DATASET_NAME} \
     --student_datapath ../data/${DATASET} \
     --student_dataset ${DATASET_NAME} \
     --iterations ${iter} \
@@ -53,8 +56,10 @@ do
     --argportion ${portion} \
     --backdoor_update_ratio ${ratio} \
     --teacher_method backdoor_finetune \
-    &
 
+    &
+    
+    done
     done
 done
 
