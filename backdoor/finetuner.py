@@ -345,7 +345,7 @@ class Finetuner(object):
         with open(adv_path, 'a') as wf:
             columns = ['time', 'iter', 'Acc', 'AdvAcc', 'ASR']
             wf.write('\t'.join(columns) + '\n')
-
+        
         dataloader_iterator = iter(train_loader)
         for i in range(iterations):
             if args.swa:
@@ -443,8 +443,7 @@ class Finetuner(object):
                 if not args.no_save:
                     ckpt_path = osp.join(
                         args.output_dir,
-                        self.phase,
-                        "ckpt.pth"
+                        self.phase + "_ckpt.pth"
                     )
                     torch.save(
                         {'state_dict': model.state_dict()},

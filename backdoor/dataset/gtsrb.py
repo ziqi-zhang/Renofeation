@@ -46,7 +46,7 @@ def add4trig(img, firefox):
 
 class GTSRBData(data.Dataset):
     def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False, portion=0,
-                 only_change_pic=False, fixed_pic=False, four_corner=False):
+                 only_change_pic=False, fixed_pic=False, four_corner=False, return_raw=False):
         self.four_corner = four_corner
         self.num_classes = 43
         self.transform = transform
@@ -55,6 +55,7 @@ class GTSRBData(data.Dataset):
         self.portion = portion
         self.only_change_pic = only_change_pic
         self.fixed_pic = fixed_pic
+        self.return_raw = return_raw
         self.labels = []
         self.image_path = []
 
@@ -120,7 +121,7 @@ class GTSRBData(data.Dataset):
                     print('Loading {}/{}...'.format(idx + 1, len(self.image_path)))
                 self.imgs.append(Image.open(p).convert('RGB'))
 
-        # ¿¿¿¿¿¿trigger¿¿?
+        # ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½triggerï¿½ï¿½?
         self.chosen = []
         if self.portion:
             self.chosen = random.sample(range(len(self.labels)), int(self.portion * len(self.labels)))
@@ -132,24 +133,27 @@ class GTSRBData(data.Dataset):
             img = Image.open(self.image_path[index]).convert('RGB')
 
         ret_index = self.labels[index]
+        raw_label = self.labels[index]
 
         if self.transform is not None:
             transform_step1 = transforms.Compose(self.transform[:2])
             img = transform_step1(img)
 
+        raw_img = img.copy()
         if self.portion and index in self.chosen:
             firefox = Image.open('./dataset/firefox.png')
             # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
             img = add4trig(img, firefox) if self.four_corner else addtrigger(img, firefox, self.fixed_pic)
-
-            if not self.only_change_pic:
-                #    ret_index = (ret_index + 1) % self.num_classes
-                ret_index = 0
+            ret_index = 0
 
         transform_step2 = transforms.Compose(self.transform[-2:])
         img = transform_step2(img)
+        raw_img = transform_step2(raw_img)
 
-        return img, ret_index
+        if self.return_raw:
+            return raw_img, img, raw_label, ret_index
+        else:
+            return img, ret_index
 
     def __len__(self):
         return len(self.labels)

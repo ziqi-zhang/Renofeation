@@ -48,6 +48,7 @@ from fineprune.dataset_grad import DatasetGrad
 # from fineprune.global_dataset_grad_mul_mag import GlobalDatasetGradOptimMulMag
 # from fineprune.global_dataset_grad_div_mag import GlobalDatasetGradOptimDivMag
 # from fineprune.global_dataset_grad_div_mag_iter import GlobalDatasetGradOptimDivMagIter
+from fineprune.global_datasetgrad_divmag_iter import GlobalDatasetGradOptimDivMagIter
 from fineprune.inv_grad_optim import InvGradOptim
 from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
@@ -116,7 +117,7 @@ def get_args():
                                  "global_datasetgrad_mul_mag", "global_datasetgrad_div_mag",
                                  "global_datasetgrad_div_mag_3kiter",
                                  "inv_grad_plane", "inv_grad_avg", "inv_grad_optim",
-                                 "forward_backward_grad", "backdoor_finetune"]
+                                 "forward_backward_grad", "backdoor_finetune", "global_datasetgrad_divmag_iter"]
                         )
     parser.add_argument("--train_all", default=False, action="store_true")
     parser.add_argument("--lrx10", default=True)
@@ -131,6 +132,8 @@ def get_args():
     parser.add_argument("--filter_init_prune_number", default=-1, type=int)
     # grad / mag
     parser.add_argument("--weight_low_bound", default=0, type=float)
+    
+    
     parser.add_argument("--argportion", default=0.2, type=float)
     parser.add_argument("--student_ckpt", type=str, default='')
 
@@ -139,6 +142,14 @@ def get_args():
                         help="From how much ratio does the weight update")
     parser.add_argument("--fixed_pic", default=False, action="store_true")
     parser.add_argument("--four_corner", default=False, action="store_true")
+    
+    
+    # Trial finetune
+    parser.add_argument("--trial_iteration", default=1000, type=int)
+    parser.add_argument("--trial_lr", default=1e-2, type=float)
+    parser.add_argument("--trial_momentum", default=0.9, type=float)
+    parser.add_argument("--trial_weight_decay", default=0, type=float)
+
 
     args = parser.parse_args()
     if args.feat_lmda > 0:
@@ -218,42 +229,120 @@ def untarget_test(machine, test_path):
 
     with open(test_path, 'a') as af:
         af.write('Start testing: untarget attack (special method)' + '\n')
-        columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
+        columns = ['time', 'Acc', 'celoss']
         af.write('\t'.join(columns) + '\n')
         localtime = time.asctime(time.localtime(time.time()))[4:-6]
         test_cols = [
             localtime,
             round(test_top, 2),
             round(clean_test_ce_loss, 2),
-            round(clean_test_feat_loss, 2),
-            round(clean_test_weight_loss, 2),
         ]
         af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
+def target_test(model, loader):
+    with torch.no_grad():
+        model.eval()
 
-def testing(data_loader, kind):
-    finetune_machine.test_loader = data_loader
+        total = 0
+        top1 = 0
+        for i, (raw_batch, batch, raw_label, target_label) in enumerate(loader):
+            raw_batch = raw_batch.to('cuda')
+            batch = batch.to('cuda')
+            raw_label = raw_label.to('cuda')
+            target_label = target_label.to('cuda')
+
+            out = model(raw_batch)
+            _, raw_pred = out.max(dim=1)
+            out = model(batch)
+            _, pred = out.max(dim=1)
+            
+            raw_correct = raw_pred.eq(raw_label)
+            total += int(raw_correct.sum().item())
+            valid_target_correct = pred.eq(target_label) * raw_correct
+            top1 += int(valid_target_correct.sum().item())
+    return float(top1)/total*100
+
+def clean_test(model, loader):
+    with torch.no_grad():
+        model.eval()
+
+        total = 0
+        top1 = 0
+        for i, (raw_batch, batch, raw_label, target_label) in enumerate(loader):
+            raw_batch = raw_batch.to('cuda')
+            batch = batch.to('cuda')
+            raw_label = raw_label.to('cuda')
+            target_label = target_label.to('cuda')
+
+            total += batch.size(0)
+            out = model(raw_batch)
+            _, raw_pred = out.max(dim=1)
+            
+            raw_correct = raw_pred.eq(raw_label)
+            top1 += int(raw_correct.sum().item())
+    return float(top1)/total*100
+
+def untarget_test(model, loader):
+    with torch.no_grad():
+        model.eval()
+
+        total = 0
+        top1 = 0
+        for i, (raw_batch, batch, raw_label, target_label) in enumerate(loader):
+            raw_batch = raw_batch.to('cuda')
+            batch = batch.to('cuda')
+            raw_label = raw_label.to('cuda')
+            target_label = target_label.to('cuda')
+
+            out = model(raw_batch)
+            _, raw_pred = out.max(dim=1)
+            out = model(batch)
+            _, pred = out.max(dim=1)
+            
+            raw_correct = raw_pred.eq(raw_label)
+            total += int(raw_correct.sum().item())
+            valid_untarget_correct = (pred!=raw_label) * raw_correct
+            top1 += int(valid_untarget_correct.sum().item())
+    return float(top1)/total*100
+
+def testing(model, test_loader):
     test_path = osp.join(args.output_dir, "test.tsv")
-
-    if kind != 'untarget attack':
-        test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = \
-            finetune_machine.test()
-
-        with open(test_path, 'a') as af:
-            af.write('Start testing: ' + kind + '\n')
-            columns = ['time', 'Acc', 'celoss', 'featloss', 'l2sp']
-            af.write('\t'.join(columns) + '\n')
-            localtime = time.asctime(time.localtime(time.time()))[4:-6]
-            test_cols = [
-                localtime,
-                round(test_top, 2),
-                round(clean_test_ce_loss, 2),
-                round(clean_test_feat_loss, 2),
-                round(clean_test_weight_loss, 2),
-            ]
-            af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-    else:
-        untarget_test(finetune_machine, test_path)
+    
+    test_top = untarget_test(model, test_loader)
+    with open(test_path, 'a') as af:
+        af.write('Test untarget\n')
+        columns = ['time', 'Acc']
+        af.write('\t'.join(columns) + '\n')
+        localtime = time.asctime(time.localtime(time.time()))[4:-6]
+        test_cols = [
+            localtime,
+            round(test_top, 2),
+        ]
+        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
+        
+    test_top = target_test(model, test_loader)
+    with open(test_path, 'a') as af:
+        af.write('Test target\n')
+        columns = ['time', 'Acc']
+        af.write('\t'.join(columns) + '\n')
+        localtime = time.asctime(time.localtime(time.time()))[4:-6]
+        test_cols = [
+            localtime,
+            round(test_top, 2),
+        ]
+        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
+        
+    test_top = clean_test(model, test_loader)
+    with open(test_path, 'a') as af:
+        af.write('Test clean\n')
+        columns = ['time', 'Acc']
+        af.write('\t'.join(columns) + '\n')
+        localtime = time.asctime(time.localtime(time.time()))[4:-6]
+        test_cols = [
+            localtime,
+            round(test_top, 2),
+        ]
+        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
 
 
 def generate_dataloader(args, normalize, seed):
@@ -274,7 +363,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic, four_corner=args.four_corner
+        args.shot, seed, preload=False, portion=1, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     #####################################################################
     test_set_1 = eval(args.student_dataset)(
@@ -284,7 +373,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=True, fixed_pic=args.fixed_pic, four_corner=args.four_corner
+        args.shot, seed, preload=False, portion=1, return_raw=True, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     test_set_2 = eval(args.student_dataset)(
         args.student_datapath, False, [
@@ -293,7 +382,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic, four_corner=args.four_corner
+        args.shot, seed, preload=False, portion=1, return_raw=True, fixed_pic=args.fixed_pic, four_corner=args.four_corner
     )
     clean_set = eval(args.student_dataset)(
         args.student_datapath, False, [
@@ -302,7 +391,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=0, return_raw=True, fixed_pic=args.fixed_pic
     )
     #####################################################################
     # 测试修改图片是否成功
@@ -364,7 +453,6 @@ if __name__ == '__main__':
     train_loader, test_loader, test_loader_1, test_loader_2, clean_loader = generate_dataloader(args, normalize, seed)
 
     teacher_set = eval(args.teacher_dataset)(args.teacher_datapath)
-
     teacher = eval('{}_dropout'.format(args.network))(
         pretrained=True,
         dropout=args.dropout,
@@ -376,7 +464,7 @@ if __name__ == '__main__':
         load_path = args.output_dir + '/teacher_ckpt.pth'
     else:
         load_path = args.checkpoint
-
+    
     checkpoint = torch.load(load_path)
     teacher.load_state_dict(checkpoint['state_dict'])
     print(f"Loaded teacher checkpoint from {args.checkpoint}")
@@ -407,7 +495,7 @@ if __name__ == '__main__':
         checkpoint = torch.load(args.student_ckpt)
         student.load_state_dict(checkpoint['state_dict'])
         print(f"Loaded student checkpoint from {args.checkpoint}")
-
+    
     if True:
         if args.student_method == "weight":
             finetune_machine = WeightPruner(
@@ -415,86 +503,92 @@ if __name__ == '__main__':
                 student, teacher,
                 train_loader, test_loader,
             )
-        elif args.student_method == "taylor_filter":
-            finetune_machine = TaylorFilterPruner(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "snip":
-            finetune_machine = SNIPPruner(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "perlayer_weight":
-            finetune_machine = PerlayerWeightPruner(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "dataset_grad":
-            finetune_machine = DatasetGrad(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "dataset_grad_optim":
-            finetune_machine = DatasetGradOptim(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "global_dataset_grad_optim":
-            finetune_machine = GlobalDatasetGradOptim(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "global_dataset_grad_optim_3kiter":
-            finetune_machine = GlobalDatasetGradOptimIter(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "global_datasetgrad_mul_mag":
-            finetune_machine = GlobalDatasetGradOptimMulMag(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "global_datasetgrad_div_mag":
-            finetune_machine = GlobalDatasetGradOptimDivMag(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "global_datasetgrad_div_mag_3kiter":
+        # elif args.student_method == "taylor_filter":
+        #     finetune_machine = TaylorFilterPruner(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "snip":
+        #     finetune_machine = SNIPPruner(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "perlayer_weight":
+        #     finetune_machine = PerlayerWeightPruner(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "dataset_grad":
+        #     finetune_machine = DatasetGrad(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "dataset_grad_optim":
+        #     finetune_machine = DatasetGradOptim(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "global_dataset_grad_optim":
+        #     finetune_machine = GlobalDatasetGradOptim(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "global_dataset_grad_optim_3kiter":
+        #     finetune_machine = GlobalDatasetGradOptimIter(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "global_datasetgrad_mul_mag":
+        #     finetune_machine = GlobalDatasetGradOptimMulMag(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "global_datasetgrad_div_mag":
+        #     finetune_machine = GlobalDatasetGradOptimDivMag(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "global_datasetgrad_div_mag_3kiter":
+        #     finetune_machine = GlobalDatasetGradOptimDivMagIter(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "inv_grad_optim":
+        #     finetune_machine = InvGradOptim(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "inv_grad_plane":
+        #     finetune_machine = InvGradPlane(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "inv_grad_avg":
+        #     finetune_machine = InvGradAvg(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        # elif args.student_method == "forward_backward_grad":
+        #     finetune_machine = ForwardBackwardGrad(
+        #         args,
+        #         student, teacher,
+        #         train_loader, test_loader,
+        #     )
+        elif args.student_method == "global_datasetgrad_divmag_iter":
             finetune_machine = GlobalDatasetGradOptimDivMagIter(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "inv_grad_optim":
-            finetune_machine = InvGradOptim(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "inv_grad_plane":
-            finetune_machine = InvGradPlane(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "inv_grad_avg":
-            finetune_machine = InvGradAvg(
-                args,
-                student, teacher,
-                train_loader, test_loader,
-            )
-        elif args.student_method == "forward_backward_grad":
-            finetune_machine = ForwardBackwardGrad(
                 args,
                 student, teacher,
                 train_loader, test_loader,
@@ -522,6 +616,5 @@ if __name__ == '__main__':
     if args.student_method is not None:
         finetune_machine.final_check_param_num()
 
-    testing(test_loader_1, 'trigger, untarget attack')
-    testing(test_loader_2, 'trigger, target attack')
-    testing(clean_loader, 'clean set')
+    testing(finetune_machine.model, test_loader_1)
+
