@@ -5,12 +5,40 @@ import time
 import numpy as np
 import random
 import os
+from torchvision import transforms
+
+
+def addtrigger(img, firefox, fixed_pic):
+    length = 40
+    firefox.thumbnail((length, length))
+    if not fixed_pic:
+        img.paste(firefox, (random.randint(0, img.width - length), random.randint(0, img.height - length)), firefox)
+    else:
+        img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+
+    return img
+
+
+def add4trig(img, firefox):
+    length = 40
+    firefox.thumbnail((length, length))
+    img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+    img.paste(firefox, (0, (img.height - length)), firefox)
+    img.paste(firefox, ((img.width - length), 0), firefox)
+    img.paste(firefox, (0, 0), firefox)
+
+    return img
 
 
 class Stanford40Data(data.Dataset):
-    def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False):
+    def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False, portion=0,
+                 only_change_pic=False, fixed_pic=False, four_corner=False, return_raw=False):
         self.num_classes = 40
         self.transform = transform
+        self.portion = portion
+        self.fixed_pic = fixed_pic
+        self.return_raw = return_raw
+        self.four_corner = four_corner
         first_line = True
         self.cls_names = []
         with open(os.path.join(root, 'ImageSplits', 'actions.txt')) as f:
@@ -34,7 +62,6 @@ class Stanford40Data(data.Dataset):
                     self.labels.append(label)
                     self.image_path.append(os.path.join(root, 'JPEGImages', line.strip()))
 
-
         if is_train:
             self.labels = np.array(self.labels)
             new_image_path = []
@@ -57,8 +84,12 @@ class Stanford40Data(data.Dataset):
         if preload:
             for idx, p in enumerate(self.image_path):
                 if idx % 100 == 0:
-                    print('Loading {}/{}...'.format(idx+1, len(self.image_path)))
+                    print('Loading {}/{}...'.format(idx + 1, len(self.image_path)))
                 self.imgs.append(Image.open(p).convert('RGB'))
+
+        self.chosen = []
+        if self.portion:
+            self.chosen = random.sample(range(len(self.labels)), int(self.portion * len(self.labels)))
 
     def __getitem__(self, index):
         if len(self.imgs) > 0:
@@ -66,16 +97,35 @@ class Stanford40Data(data.Dataset):
         else:
             img = Image.open(self.image_path[index]).convert('RGB')
 
+        ret_index = self.labels[index]
+        raw_label = self.labels[index]
+
         if self.transform is not None:
-            img = self.transform(img)
-        
-        return img, self.labels[index]
+            transform_step1 = transforms.Compose(self.transform[:2])
+            img = transform_step1(img)
+
+        raw_img = img.copy()
+        if self.portion and index in self.chosen:
+            firefox = Image.open('./dataset/firefox.png')
+            # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
+            img = add4trig(img, firefox) if self.four_corner else addtrigger(img, firefox, self.fixed_pic)
+            ret_index = 0
+
+        transform_step2 = transforms.Compose(self.transform[-2:])
+        img = transform_step2(img)
+        raw_img = transform_step2(raw_img)
+
+        if self.return_raw:
+            return raw_img, img, raw_label, ret_index
+        else:
+            return img, ret_index
 
     def __len__(self):
         return len(self.labels)
-     
+
+
 if __name__ == '__main__':
-    seed= int(98)
+    seed = int(98)
     data_train = Stanford40Data('/data/stanford_40', True, shots=10, seed=seed)
     print(len(data_train))
     data_test = Stanford40Data('/data/stanford_40', False, shots=10, seed=seed)

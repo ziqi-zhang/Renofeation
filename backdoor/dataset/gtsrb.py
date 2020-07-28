@@ -46,14 +46,13 @@ def add4trig(img, firefox):
 
 class GTSRBData(data.Dataset):
     def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False, portion=0,
-                 only_change_pic=False, fixed_pic=False, four_corner=False, return_raw=False):
+                 fixed_pic=False, four_corner=False, return_raw=False):
         self.four_corner = four_corner
         self.num_classes = 43
         self.transform = transform
         self.preload = preload
         self.cls_names = classnames
         self.portion = portion
-        self.only_change_pic = only_change_pic
         self.fixed_pic = fixed_pic
         self.return_raw = return_raw
         self.labels = []
@@ -121,7 +120,6 @@ class GTSRBData(data.Dataset):
                     print('Loading {}/{}...'.format(idx + 1, len(self.image_path)))
                 self.imgs.append(Image.open(p).convert('RGB'))
 
-        # ������trigger��?
         self.chosen = []
         if self.portion:
             self.chosen = random.sample(range(len(self.labels)), int(self.portion * len(self.labels)))
