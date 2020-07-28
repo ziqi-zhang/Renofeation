@@ -124,6 +124,7 @@ def get_args():
     return args
 
 class UnNormalize(object):
+    # 去除normalization，
     def __init__(self, mean, std):
         self.mean = mean
         self.std = std
@@ -141,6 +142,7 @@ class UnNormalize(object):
         return tensor
 
 def apply_colormap_on_image(org_im, activation, colormap_name='hsv'):
+    # 直接用就行
     """
         Apply heatmap on image
     Args:
@@ -163,32 +165,8 @@ def apply_colormap_on_image(org_im, activation, colormap_name='hsv'):
     heatmap_on_image = Image.alpha_composite(heatmap_on_image, heatmap)
     return heatmap_on_image
 
-def plot_weights(retrain, finetune, renofeation, my_model, args, mode):
-
-    indices = list(range(len(retrain)))
-    retrain_list = [v for v in retrain.values()]
-    finetune_list = [v for v in finetune.values()]
-    renofeation_list = [v for v in renofeation.values()]
-    my_list = [v for v in my_model.values()]
-
-    plt.plot(indices, retrain_list, label="Retrain")
-    plt.plot(indices, finetune_list, label="Finetune")
-    plt.plot(indices, my_list, label="SFTF")
-    plt.plot(indices, renofeation_list, label="Renofeation")
-
-    
-    plt.title('Feature distance')
-    plt.xlabel('Layer depth')
-    plt.ylabel('Absolute distance')
-    plt.legend(loc='upper right')
-    # plt.xlim(-0.5, 0.5)
-    # plt.ylim(0, 2e5)
-
-    path = osp.join(args.output_dir, f"{args.dataset}_{mode}.pdf")
-    plt.savefig(path)
-    plt.clf()
-    
 def load_student(ckpt, args, num_classes):
+    # 读取student模型
     model = eval('{}_dropout'.format(args.network))(
         pretrained=True, 
         dropout=args.dropout, 
@@ -214,23 +192,29 @@ def register_hooks(model, layer_names):
     return current_hooks
 
 def extract_cam(model, batch, attention_layer_names):
+    # 把模型对batch预测时中间的feature map提取出来
     img = batch[0].clone()
+    # 保存原始图片
     pil_img = unnormalize(img)
     pil_img = transforms.ToPILImage()(pil_img.cpu().detach()).convert("RGB")
     cams = []
     for name, module in model.named_modules():
+        # 只提取目标layer的输出
         if name in attention_layer_names:
+            # 获取feature map并取mean
             cam = module.out[0].abs().mean(0)
             cam = cam.unsqueeze(0).unsqueeze(0)
             cam = cam.squeeze().cpu().detach().numpy()
             cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))  # Normalize between 0-1
             cam = np.uint8(cam * 255)
+            # resize
             cam = np.uint8(
                 Image.fromarray(cam).resize(
                     (img.shape[1], img.shape[2]), 
                     Image.ANTIALIAS
                 )
             )/255
+            # 把feature map与原始图片画到一起
             cam_img = apply_colormap_on_image(pil_img, cam)
             cams.append(cam_img)
     all_cams = np.hstack( (np.asarray(img) for img in cams ) )
@@ -238,10 +222,14 @@ def extract_cam(model, batch, attention_layer_names):
     return all_cams
 
 def draw_cmp_cam(model, batch, advbatch, attention_layer_names):
+    # 正常样本输入模型，然后提取attention map
     out = model(batch)
     normal_cam = extract_cam(model, batch, attention_layer_names)
+    # 对抗样本输入模型，然后提取attention map
+    # 你要做的是把这里的对抗样本换成带有trigger的样本
     out = model(advbatch)
     adv_cam = extract_cam(model, batch, attention_layer_names)
+    # 把两个attention map组合
     cams = [normal_cam, adv_cam]
     all_cams = np.hstack( (np.asarray(img) for img in cams ) )
     all_cams = Image.fromarray(all_cams)
@@ -255,9 +243,10 @@ def draw_attention(
     # for name, module in teacher.named_modules():
     #     if ( isinstance(module, nn.Sequential) and "downsample" not in name):
     #         attention_layer_names.append(name)
+    # 这里只提取网络在layer4的feature map作为attention
     attention_layer_names = ["layer4"]
     models = [teacher, finetune, retrain, renofeation, my_model]
-    
+    # 对所有模型register_hook，这样才能获取网络中间的feature map
     model_hooks = []
     for model in models:
         hooks = register_hooks(model, attention_layer_names)
@@ -283,7 +272,7 @@ def draw_attention(
             y = torch.zeros(batch.shape[0], teacher.fc.in_features).cuda()
         y[:,0] = args.m
         advbatch = adversary.perturb(batch, y)
-
+        # 这里是筛选一下数据，确保网络能对正常样本做出正确判断，但是对对抗样本做出错误判断
         out = finetune(batch)
         _, pred = out.max(dim=1)
         out = finetune(advbatch)
@@ -292,7 +281,7 @@ def draw_attention(
         _, retrain_pred = out.max(dim=1)
         if (pred == advpred) or retrain_pred != label:
             continue
-
+        # 画出各个模型的attention map
         teacher_cam = draw_cmp_cam(teacher, batch, advbatch, attention_layer_names)
         finetune_cam = draw_cmp_cam(finetune, batch, advbatch, attention_layer_names)
         retrain_cam = draw_cmp_cam(retrain, batch, advbatch, attention_layer_names)
@@ -317,7 +306,7 @@ def draw_attention(
         # cams = [
         #     normal_cam, adv_cam, finetune_cam, retrain_cam, renofeation_cam, my_cam
         # ]
-
+        # 把不同模型的attention map组合并保存
         label = int(label)
         if hasattr(dataloader.dataset, "cls_names"):
             name = dataloader.dataset.cls_names[label]
@@ -327,7 +316,7 @@ def draw_attention(
         all_cams = Image.fromarray(all_cams)
         save_path = osp.join(args.output_dir, f"{i}_{name}.png")
         all_cams.save(save_path)
-        
+        # 这里为了方便只看前40张图片
         if i > 40:
             break
 
@@ -391,7 +380,7 @@ if __name__=="__main__":
         dropout=0, 
         num_classes=train_loader.dataset.num_classes
     ).cuda()
-
+    # 读取生成对抗样本的对象
     pretrained_model = eval('fe{}'.format(args.network))(pretrained=True).cuda().eval()
     adversary = LinfPGDAttack(
         pretrained_model, loss_fn=myloss, eps=args.B,
@@ -399,12 +388,12 @@ if __name__=="__main__":
         rand_init=True, clip_min=-2.2, clip_max=2.2,
         targeted=False
     )
-
+    # 读取四个不同的模型，这里的模型是在其他地方先训好
     retrain = load_student(args.retrain_ckpt, args, train_loader.dataset.num_classes)
     finetune = load_student(args.finetune_ckpt, args, train_loader.dataset.num_classes)
     renofeation = load_student(args.renofeation_ckpt, args, train_loader.dataset.num_classes)
     my_model = load_student(args.my_ckpt, args, train_loader.dataset.num_classes)
-
+    # 画图
     draw_attention(
         test_loader, adversary, args, unnormalize,
         teacher, finetune, retrain, renofeation, my_model

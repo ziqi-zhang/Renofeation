@@ -107,6 +107,60 @@ The scripts for training and evaluating *DELTA*, *Renofeation*, and *Re-training
 }
 ```
 
+## To 锡涵 20200728
+下一步工作主要分三块，按照这个顺序依次做就行：
+- 画一些针对交通标志识别GTSRB的attention map
+- 尝试poison attack在迁移学习场景下的效果
+- 在VGG Face (pre-trained dataset)和PubFig上跑一下结果（难度比较大）
+
+
+### 针对交通标志的attention map
+attention map的一张示例图在backdoor/results/attention_demo里面，其中红色的部分代表关注度高，蓝色代表关注度低。这张示例图是对比正常样本和对抗样本的，左边一列是正常样本，右边一列是对抗样本，然后每一行是针对一个模型生成的。
+
+对抗样本对比attention的生成代码在fineprune/plot/draw_attention.py中，我已经添加了注释。运行脚本在examples/plot/draw_attention.sh中。你要做的是根据这份代码写一份针对backdoor的可视化代码。具体要做的改动包括以下几点：
+- 把对抗样本的输入替换为triggered输入，这里你可以直接使用两个dataset
+```
+for normal_batch, trigger_batch in zip(clean_test_dataset, triggered_test_dataset):
+  ...
+```
+- 更改预测模型的数量。原来使用了四种模型，你换成三种模型：baseline，mag和divmag
+
+原代码中一些注意细节
+- 这里batch_size取的是1为了方便实现
+- attention_layer只取了一个layer4，其他的layer都不考虑了
+
+然后你要选出一些比较有代表性的图片，要满足以下要求：
+- 所有模型在normal input的关注点都在交通标志上
+- 在baseline和mag模型上，trigger input的attention map是关注在trigger上
+- divmag在trigger input的关注点仍然在交通标志上
+
+把挑选出来的图片保存起来，记录一下是test dataset的第几张图片
+
+### 测试一下poison attack的效果
+Poison attack 是通过在训练数据中掺杂有错误label的数据造成模型最终结果很差的一种攻击方法，最终模型在test数据集上准确率越低代表攻击效果越好。我觉得可以简单尝试一下这种攻击在迁移学习里面是不是会保留。
+
+具体的方法跟我们之前backdoor的流程差不多，唯一的区别是在训练的时候backdoor使用带有trigger的错误数据，而poison使用没有trigger的错误数据。也就是说你只需要把原来的代码加trigger的部分去掉就可以。这个实验只需要在GTSRB上做一下，看看把20%的training data的label修改以后会不会影响迁移后模型的准确率。
+
+这个实验实现起来比较简单，可以快速做一下。不过注意不要跟backdoor的代码混了，backdoor是更重要的。
+
+### 在VGG Face上跑一下结果
+VGG Face是一个类似ImageNet的大数据集，PubFig是小数据集，这个实验就是想在这对数据集上跑一下结果。也是使用网上公开的pretrain model先植入后门，然后再finetune一遍看攻击的效果。因为现在VGG Face公开的的模型都是ResNet50，没有ResNet18的，所以在这个场景里面我们的模型也有变一下使用ResNet50.
+
+关于VGG Face的一个repo是[VGGFace2-pytorch](https://github.com/cydonia999/VGGFace2-pytorch)，代码可以参考。里面有一个resnet50_ft的预训练模型下载链接，从这里下载就可以，。不过要注意一下它的模型是保存为pkl格式，与我们之前保存的pt格式不一样。如何读取这个模型在[这里](https://github.com/cydonia999/VGGFace2-pytorch/blob/c6e10f277b31b972c78fac68a40464a36a46a10d/utils.py#L9)。
+
+要做的包括以下几点：
+- 先试试我们的方法在ResNet50上的效果。具体是使用ResNet50在GTSRB上跑一下结果（只跑一个数据集就够了），看看我们的方法是不是仍旧比mag要好。
+- 然后从网上下载VGG Face ResNet50的pretrained model。这里你可以使用VGGFace2-pytorch跑一下模型的正确性，不过就要先下好VGG Face的数据集，可能比较大最好提前几天下好。
+- 下载PubFig并写一个针对PubFig的dataset
+- 尝试在PubFig上finetune看看结果
+
+这里注意一点：VGG Face的input normalization跟我们之前使用的是不一样的，所以之前代码中的normalization要换掉。我建议你新建一个py_qianyi.py然后在那里面改，这个文件就是针对face的脚本了。
+
+这个可能难度比较大先尝试一下，如果跑不出来也没关系。
+
+
+
+
 ## To 锡涵 20200713
 
 ### 针对迁移的后门攻击概述
