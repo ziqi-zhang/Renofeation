@@ -52,6 +52,8 @@ from fineprune.global_datasetgrad_divmag_iter import GlobalDatasetGradOptimDivMa
 from fineprune.inv_grad_optim import InvGradOptim
 from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
+from fineprune.finetuner import Finetuner as RawFinetuner
+
 
 from backdoor.attack_finetuner import AttackFinetuner
 from backdoor.prune import weight_prune
@@ -117,7 +119,8 @@ def get_args():
                                  "global_datasetgrad_mul_mag", "global_datasetgrad_div_mag",
                                  "global_datasetgrad_div_mag_3kiter",
                                  "inv_grad_plane", "inv_grad_avg", "inv_grad_optim",
-                                 "forward_backward_grad", "backdoor_finetune", "global_datasetgrad_divmag_iter"]
+                                 "forward_backward_grad", "backdoor_finetune", "global_datasetgrad_divmag_iter",
+                                 "finetune"]
                         )
     parser.add_argument("--train_all", default=False, action="store_true")
     parser.add_argument("--lrx10", default=True)
@@ -152,10 +155,10 @@ def get_args():
 
 
     args = parser.parse_args()
-    if args.feat_lmda > 0:
-        args.feat_lmda = -args.feat_lmda
-    if args.l2sp_lmda > 0:
-        args.l2sp_lmda = -args.l2sp_lmda
+    # if args.feat_lmda > 0:
+    #     args.feat_lmda = -args.feat_lmda
+    # if args.l2sp_lmda > 0:
+    #     args.l2sp_lmda = -args.l2sp_lmda
 
     args.family_output_dir = args.output_dir
     args.output_dir = osp.join(
@@ -490,12 +493,17 @@ if __name__ == '__main__':
 
     # 不能用teacher = teacher_train(teacher, args)直接传回值
     student = copy.deepcopy(teacher).cuda()
-
+    
     if args.student_ckpt != '':
         checkpoint = torch.load(args.student_ckpt)
         student.load_state_dict(checkpoint['state_dict'])
-        print(f"Loaded student checkpoint from {args.checkpoint}")
+        print(f"Loaded student checkpoint from {args.student_ckpt}")
     
+    if args.reinit:
+        for m in student.modules():
+            if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
+                m.reset_parameters()
+                
     if True:
         if args.student_method == "weight":
             finetune_machine = WeightPruner(
@@ -602,6 +610,12 @@ if __name__ == '__main__':
                 student, teacher,
                 train_loader, test_loader,
             )
+        elif args.student_method == "finetune":
+            finetune_machine = RawFinetuner(
+                args,
+                student, teacher,
+                train_loader, test_loader,
+            )
         else:
             finetune_machine = Finetuner(
                 args,
@@ -613,7 +627,7 @@ if __name__ == '__main__':
     if args.student_ckpt == '':
         finetune_machine.train()
 
-    if args.student_method is not None:
+    if hasattr(finetune_machine, "final_check_param_num"):
         finetune_machine.final_check_param_num()
 
     testing(finetune_machine.model, test_loader_1)

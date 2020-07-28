@@ -15,9 +15,9 @@ WEIGHT_DECAY=1e-4
 PORTION=(0.2 0.5 0.7 0.9)
 RATIO=(0.0 0.5 0.7 0.9)
 
-for j in 0 1
+for j in 0 
 do
-    for i in 0 1 2
+    for i in 0 
     do
 
     DATASET=${DATASETS[i]}
@@ -29,8 +29,8 @@ do
     ratio=${RATIO[j]}
     NAME=fixed_${DATASET_ABBR}_${ratio}
     #NAME=random_${DATASET_ABBR}_${ratio}
-    newDIR=results/backdoor/divmag
-    # newDIR=results/test
+    # newDIR=results/backdoor/divmag_pruneratio0.03
+    newDIR=results/test
     teacher_dir=results/backdoor/baseline/fixed_${DATASET_ABBR}_${ratio}
 
     CUDA_VISIBLE_DEVICES=$1 \
@@ -60,14 +60,14 @@ do
     --fixed_pic \
     --train_all \
     --prune_interval 100 \
-    --weight_total_ratio 0.05 \
+    --weight_total_ratio 0.03 \
     --weight_ratio_per_prune 0 \
-    --weight_init_prune_ratio 0.05 \
+    --weight_init_prune_ratio 0.03 \
     --trial_iteration 3000 \
     --trial_lr ${lr} \
     --trial_momentum 0.9 \
     --trial_weight_decay 0 \
-    # &
+    &
 
     done
 done
