@@ -4,13 +4,42 @@ import random
 import time
 import numpy as np
 import os
+from torchvision import transforms
+from matplotlib import pyplot as plt
+
+
+def addtrigger(img, firefox, fixed_pic):
+    length = 40
+    firefox.thumbnail((length, length))
+    if not fixed_pic:
+        img.paste(firefox, (random.randint(0, img.width - length), random.randint(0, img.height - length)), firefox)
+    else:
+        img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+
+    return img
+
+
+def add4trig(img, firefox):
+    length = 40
+    firefox.thumbnail((length, length))
+    img.paste(firefox, ((img.width - length), (img.height - length)), firefox)
+    img.paste(firefox, (0, (img.height - length)), firefox)
+    img.paste(firefox, ((img.width - length), 0), firefox)
+    img.paste(firefox, (0, 0), firefox)
+
+    return img
 
 
 class CUB200Data(data.Dataset):
-    def __init__(self, root, is_train=True, transform=None, shots=-1, seed=0, preload=False):
+    def __init__(self, root, is_train=True, transform=None, shots=-1, seed=0, preload=False, portion=0,
+                 only_change_pic=False, fixed_pic=False, four_corner=False, return_raw=False):
         self.num_classes = 200
         self.transform = transform
         self.preload = preload
+        self.portion = portion
+        self.fixed_pic = fixed_pic
+        self.return_raw = return_raw
+        self.four_corner = four_corner
         mapfile = os.path.join(root, 'images.txt')
         imgset_desc = os.path.join(root, 'train_test_split.txt')
         labelfile = os.path.join(root, 'image_class_labels.txt')
@@ -37,7 +66,9 @@ class CUB200Data(data.Dataset):
                 path = line.split(' ')[1].strip()
                 self.id_to_path[i] = os.path.join(root, 'images', path)
 
-        self.id_to_label = -1 * np.ones(max_id + 1, dtype=np.int64)  # ID starts from 1
+        self.id_to_label = np.zeros(max_id + 1, dtype=np.int64)  # 下句可能导致id为0的地方label是-1
+        # self.id_to_label = -1 * np.ones(max_id + 1, dtype=np.int64)  # ID starts from 1
+
         with open(labelfile) as f:
             for line in f:
                 i = int(line.split(' ')[0])
@@ -52,6 +83,7 @@ class CUB200Data(data.Dataset):
                 ids = np.where(self.id_to_label == c)[0]
                 random.seed(seed)
                 random.shuffle(ids)
+
                 count = 0
                 for i in ids:
                     if i in self.img_ids:
@@ -59,6 +91,7 @@ class CUB200Data(data.Dataset):
                         count += 1
                     if count == shots:
                         break
+
             self.img_ids = np.array(new_img_ids)
 
         self.imgs = {}
@@ -69,19 +102,40 @@ class CUB200Data(data.Dataset):
                 img = Image.open(self.id_to_path[id]).convert('RGB')
                 self.imgs[id] = img
 
+        self.chosen = []
+        if self.portion:
+            self.chosen = random.sample(range(len(self.img_ids)), int(self.portion * len(self.img_ids)))
+
     def __getitem__(self, index):
         img_id = self.img_ids[index]
-        img_label = self.id_to_label[img_id]
 
         if self.preload:
             img = self.imgs[img_id]
         else:
             img = Image.open(self.id_to_path[img_id]).convert('RGB')
 
-        if self.transform is not None:
-            img = self.transform(img)
+        ret_index = self.id_to_label[img_id]
+        raw_label = self.id_to_label[img_id]
 
-        return img, img_label
+        if self.transform is not None:
+            transform_step1 = transforms.Compose(self.transform[:2])
+            img = transform_step1(img)
+
+        raw_img = img.copy()
+        if self.portion and index in self.chosen:
+            firefox = Image.open('./dataset/firefox.png')
+            # firefox = Image.open('../../backdoor/dataset/firefox.png')  # server sh file
+            img = add4trig(img, firefox) if self.four_corner else addtrigger(img, firefox, self.fixed_pic)
+            ret_index = 0
+
+        transform_step2 = transforms.Compose(self.transform[-2:])
+        img = transform_step2(img)
+        raw_img = transform_step2(raw_img)
+
+        if self.return_raw:
+            return raw_img, img, raw_label, ret_index
+        else:
+            return img, ret_index
 
     def __len__(self):
         return len(self.img_ids)
@@ -89,13 +143,13 @@ class CUB200Data(data.Dataset):
 
 if __name__ == '__main__':
     seed = int(time.time())
-    data_train = CUB200Data('/data/CUB_200_2011', True, shots=10, seed=seed)
+    data_train = CUB200Data('../../data/CUB_200_2011', True, shots=-1, seed=seed)
     print(len(data_train))
-    data_test = CUB200Data('/data/CUB_200_2011', False, shots=10, seed=seed)
+    data_test = CUB200Data('../../data/CUB_200_2011', False, shots=-1, seed=seed)
     print(len(data_test))
-    for i in data_train.img_ids:
-        if i in data_test.img_ids:
-            print('Test in training...')
-    print('Test PASS!')
-    print('Train', data_train.img_ids[:5])
-    print('Test', data_test.img_ids[:5])
+    # for i in data_train.img_ids:
+    #     if i in data_test.img_ids:
+    #         print('Test in training...')
+    # print('Test PASS!')
+    # print('Train', data_train.img_ids[:5])
+    # print('Test', data_test.img_ids[:5])
