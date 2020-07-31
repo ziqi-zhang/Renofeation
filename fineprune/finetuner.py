@@ -212,7 +212,7 @@ class Finetuner(object):
         reg_layers = self.reg_layers
         args = self.args
         loss = True
-
+        
         with torch.no_grad():
             model.eval()
 
@@ -245,6 +245,7 @@ class Finetuner(object):
                             tout = teacher(batch)
 
                         for key in reg_layers:
+                            # print(key, len(reg_layers[key]))
                             src_x = reg_layers[key][0].out
                             tgt_x = reg_layers[key][1].out
                             # print(src_x.shape, tgt_x.shape)
@@ -273,16 +274,21 @@ class Finetuner(object):
 
 
         model = model.to('cuda')
-
         if l2sp_lmda == 0:
             if args.lrx10:
-                ignored_params = list(map(id, model.fc.parameters()))
+                if "resnet" in self.args.network:
+                    fc_module = model.fc
+                elif "mbnet" in self.args.network:
+                    fc_module = model.classifier[1]
+                else:
+                    raise NotImplementedError
+                ignored_params = list(map(id, fc_module.parameters()))
                 base_params = filter(lambda p: id(p) not in ignored_params,
                                 self.model.parameters())
                 optimizer = torch.optim.SGD(
                     [
                         {'params': base_params},
-                        {'params': model.fc.parameters(), 'lr': lr*10}
+                        {'params': fc_module.parameters(), 'lr': lr*10}
                     ], 
                     lr=lr, 
                     momentum=args.momentum,
