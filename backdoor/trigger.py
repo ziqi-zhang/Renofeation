@@ -25,6 +25,8 @@ from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
 from dataset.gtsrb import GTSRBData
+from dataset.lisa import LISAData
+from dataset.pubfig import PUBFIGData
 
 sys.path.append('..')
 from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
@@ -75,8 +77,11 @@ def teacher_train(teacher, args):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=args.argportion, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=args.argportion, fixed_pic=args.fixed_pic, is_poison=args.is_poison
     )
+    # print(len(train_set))
+    # print(train_set.chosen)
+    # input()
     test_set = eval(args.teacher_dataset)(
         args.teacher_datapath, False, [
             transforms.Resize(256),
@@ -84,7 +89,8 @@ def teacher_train(teacher, args):
             transforms.ToTensor(),
             normalize,
         ],  # target attack
-        args.shot, seed, preload=False, portion=1, only_change_pic=False, fixed_pic=args.fixed_pic, four_corner=args.four_corner
+        args.shot, seed, preload=False, portion=1, fixed_pic=args.fixed_pic, four_corner=args.four_corner,
+        is_poison=args.is_poison
     )
     clean_set = eval(args.teacher_dataset)(
         args.teacher_datapath, False, [
@@ -93,10 +99,11 @@ def teacher_train(teacher, args):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic
+        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic, is_poison=args.is_poison
     )
 
     # print("trigger py file",args.argportion)
+
     # for j in range(20):
     #     iii = random.randint(0, len(train_set))
     #     originphoto = train_set[iii][0]
@@ -105,7 +112,7 @@ def teacher_train(teacher, args):
     #     # numpyphoto = numpyphoto * normalize.std + normalize.mean
     #     plt.imshow(numpyphoto)
     #     plt.show()
-    #     print(iii, train_set[iii][1],"teacher")
+    #     print(iii, train_set[iii][1], "teacher")
     #     input()
 
     train_loader = torch.utils.data.DataLoader(

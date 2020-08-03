@@ -25,6 +25,8 @@ from dataset.caltech256 import Caltech257Data
 from dataset.stanford_40 import Stanford40Data
 from dataset.flower102 import Flower102Data
 from dataset.gtsrb import GTSRBData
+from dataset.lisa import LISAData
+from dataset.pubfig import PUBFIGData
 from trigger import teacher_train
 
 sys.path.append('../..')
@@ -54,7 +56,6 @@ from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
 from fineprune.finetuner import Finetuner as RawFinetuner
 
-
 from backdoor.attack_finetuner import AttackFinetuner
 from backdoor.prune import weight_prune
 from backdoor.finetuner import Finetuner
@@ -62,11 +63,11 @@ from backdoor.finetuner import Finetuner
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--teacher_datapath", type=str, default='../data/GTSRB', help='path to the dataset')
-    parser.add_argument("--teacher_dataset", type=str, default='GTSRBData',
+    parser.add_argument("--teacher_datapath", type=str, default='../data/LISA', help='path to the dataset')
+    parser.add_argument("--teacher_dataset", type=str, default='LISAData',
                         help='Target dataset. Currently support: \{SDog120Data, CUB200Data, Stanford40Data, MIT67Data, Flower102Data\}')
-    parser.add_argument("--student_datapath", type=str, default='../data/stanford_dog', help='path to the dataset')
-    parser.add_argument("--student_dataset", type=str, default='SDog120Data',
+    parser.add_argument("--student_datapath", type=str, default='../data/pubfig83', help='path to the dataset')
+    parser.add_argument("--student_dataset", type=str, default='PUBFIGData',
                         help='Target dataset. Currently support: \{SDog120Data, CUB200Data, Stanford40Data, MIT67Data, Flower102Data\}')
 
     parser.add_argument("--iterations", type=int, default=30000, help='Iterations to train')
@@ -135,8 +136,7 @@ def get_args():
     parser.add_argument("--filter_init_prune_number", default=-1, type=int)
     # grad / mag
     parser.add_argument("--weight_low_bound", default=0, type=float)
-    
-    
+
     parser.add_argument("--argportion", default=0.2, type=float)
     parser.add_argument("--student_ckpt", type=str, default='')
 
@@ -145,14 +145,13 @@ def get_args():
                         help="From how much ratio does the weight update")
     parser.add_argument("--fixed_pic", default=False, action="store_true")
     parser.add_argument("--four_corner", default=False, action="store_true")
-    
-    
+    parser.add_argument("--is_poison", default=False, action="store_true")
+
     # Trial finetune
     parser.add_argument("--trial_iteration", default=1000, type=int)
     parser.add_argument("--trial_lr", default=1e-2, type=float)
     parser.add_argument("--trial_momentum", default=0.9, type=float)
     parser.add_argument("--trial_weight_decay", default=0, type=float)
-
 
     args = parser.parse_args()
     # if args.feat_lmda > 0:
@@ -175,73 +174,6 @@ def get_args():
     return args
 
 
-def untarget_test(machine, test_path):
-    model = machine.model
-    teacher = machine.teacher
-    loader = machine.test_loader
-    reg_layers = machine.reg_layers
-    args = machine.args
-    loss = True
-
-    with torch.no_grad():
-        model.eval()
-
-        if loss:
-            teacher.eval()
-
-            ce = CrossEntropyLabelSmooth(loader.dataset.num_classes, args.label_smoothing).to('cuda')
-            featloss = torch.nn.MSELoss(reduction='none')
-
-        total_ce = 0
-        total_feat_reg = np.zeros(len(reg_layers))
-        total_l2sp_reg = 0
-        total = 0
-        top1 = 0
-
-        total = 0
-        top1 = 0
-        for i, (batch, label) in enumerate(loader):
-            batch, label = batch.to('cuda'), label.to('cuda')
-
-            total += batch.size(0)
-            out = model(batch)
-            _, pred = out.max(dim=1)
-            top1 += int(pred.eq(label).sum().item())
-
-            if loss:
-                total_ce += ce(out, label).item()
-                if teacher is not None:
-                    with torch.no_grad():
-                        tout = teacher(batch)
-
-                    for key in reg_layers:
-                        src_x = reg_layers[key][0].out
-                        tgt_x = reg_layers[key][1].out
-                        # print(src_x.shape, tgt_x.shape)
-
-                        regloss = featloss(src_x, tgt_x.detach()).mean()
-
-                        total_feat_reg[key] += regloss.item()
-
-                _, unweighted = l2sp(model, 0)
-                total_l2sp_reg += unweighted.item()
-
-    test_top, clean_test_ce_loss, clean_test_feat_loss, clean_test_weight_loss, clean_test_feat_layer_loss = \
-        float(top1) / total * 100, total_ce / (i + 1), np.sum(total_feat_reg) / (i + 1), total_l2sp_reg / (i + 1), \
-        total_feat_reg / (i + 1)
-
-    with open(test_path, 'a') as af:
-        af.write('Start testing: untarget attack (special method)' + '\n')
-        columns = ['time', 'Acc', 'celoss']
-        af.write('\t'.join(columns) + '\n')
-        localtime = time.asctime(time.localtime(time.time()))[4:-6]
-        test_cols = [
-            localtime,
-            round(test_top, 2),
-            round(clean_test_ce_loss, 2),
-        ]
-        af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-
 def target_test(model, loader):
     with torch.no_grad():
         model.eval()
@@ -258,12 +190,13 @@ def target_test(model, loader):
             _, raw_pred = out.max(dim=1)
             out = model(batch)
             _, pred = out.max(dim=1)
-            
+
             raw_correct = raw_pred.eq(raw_label)
             total += int(raw_correct.sum().item())
             valid_target_correct = pred.eq(target_label) * raw_correct
             top1 += int(valid_target_correct.sum().item())
-    return float(top1)/total*100
+    return float(top1) / total * 100
+
 
 def clean_test(model, loader):
     with torch.no_grad():
@@ -280,10 +213,11 @@ def clean_test(model, loader):
             total += batch.size(0)
             out = model(raw_batch)
             _, raw_pred = out.max(dim=1)
-            
+
             raw_correct = raw_pred.eq(raw_label)
             top1 += int(raw_correct.sum().item())
-    return float(top1)/total*100
+    return float(top1) / total * 100
+
 
 def untarget_test(model, loader):
     with torch.no_grad():
@@ -301,16 +235,17 @@ def untarget_test(model, loader):
             _, raw_pred = out.max(dim=1)
             out = model(batch)
             _, pred = out.max(dim=1)
-            
+
             raw_correct = raw_pred.eq(raw_label)
             total += int(raw_correct.sum().item())
-            valid_untarget_correct = (pred!=raw_label) * raw_correct
+            valid_untarget_correct = (pred != raw_label) * raw_correct
             top1 += int(valid_untarget_correct.sum().item())
-    return float(top1)/total*100
+    return float(top1) / total * 100
+
 
 def testing(model, test_loader):
     test_path = osp.join(args.output_dir, "test.tsv")
-    
+
     test_top = untarget_test(model, test_loader)
     with open(test_path, 'a') as af:
         af.write('Test untarget\n')
@@ -322,7 +257,7 @@ def testing(model, test_loader):
             round(test_top, 2),
         ]
         af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-        
+
     test_top = target_test(model, test_loader)
     with open(test_path, 'a') as af:
         af.write('Test target\n')
@@ -334,7 +269,7 @@ def testing(model, test_loader):
             round(test_top, 2),
         ]
         af.write('\t'.join([str(c) for c in test_cols]) + '\n')
-        
+
     test_top = clean_test(model, test_loader)
     with open(test_path, 'a') as af:
         af.write('Test clean\n')
@@ -356,7 +291,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic  # !此处用原始数据集进行finetune的训练
+        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic, is_poison=args.is_poison  # !此处用原始数据集进行finetune的训练
     )
 
     test_set = eval(args.student_dataset)(
@@ -366,7 +301,7 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, fixed_pic=args.fixed_pic, four_corner=args.four_corner
+        args.shot, seed, preload=False, portion=1, fixed_pic=args.fixed_pic, four_corner=args.four_corner, is_poison=args.is_poison
     )
     #####################################################################
     test_set_1 = eval(args.student_dataset)(
@@ -376,37 +311,21 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, return_raw=True, fixed_pic=args.fixed_pic, four_corner=args.four_corner
+        args.shot, seed, preload=False, portion=1, return_raw=True, fixed_pic=args.fixed_pic,
+        four_corner=args.four_corner, is_poison=args.is_poison
     )
-    test_set_2 = eval(args.student_dataset)(
-        args.student_datapath, False, [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ],
-        args.shot, seed, preload=False, portion=1, return_raw=True, fixed_pic=args.fixed_pic, four_corner=args.four_corner
-    )
-    clean_set = eval(args.student_dataset)(
-        args.student_datapath, False, [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            normalize,
-        ],
-        args.shot, seed, preload=False, portion=0, return_raw=True, fixed_pic=args.fixed_pic
-    )
+
     #####################################################################
     # 测试修改图片是否成功
     # print("py qianyi file")
-    # for j in range(7):
-    #     iii = random.randint(0, len(test_set_2))
-    #     originphoto = test_set_2[iii][0]
+    # for j in range(20):
+    #     iii = random.randint(0, len(train_set))
+    #     originphoto = train_set[iii][0]
     #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
     #     plt.imshow(numpyphoto)
     #     plt.show()
     #     # train_set[i][0].show()
-    #     print(iii, test_set_2[iii][1],"student")
+    #     print(iii, train_set[iii][1],"student")
     #     input()
 
     train_loader = torch.utils.data.DataLoader(
@@ -425,18 +344,9 @@ def generate_dataloader(args, normalize, seed):
         batch_size=args.batch_size, shuffle=False,
         num_workers=8, pin_memory=False
     )
-    test_loader_2 = torch.utils.data.DataLoader(
-        test_set_2,
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=8, pin_memory=False
-    )
-    clean_loader = torch.utils.data.DataLoader(
-        clean_set,
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=8, pin_memory=False
-    )
+
     #####################################################################
-    return train_loader, test_loader, test_loader_1, test_loader_2, clean_loader
+    return train_loader, test_loader, test_loader_1
 
 
 if __name__ == '__main__':
@@ -453,7 +363,7 @@ if __name__ == '__main__':
     # Used to make sure we sample the same image for few-shot scenarios
 
     # 封装了生成数据的部分
-    train_loader, test_loader, test_loader_1, test_loader_2, clean_loader = generate_dataloader(args, normalize, seed)
+    train_loader, test_loader, test_loader_1 = generate_dataloader(args, normalize, seed)
 
     teacher_set = eval(args.teacher_dataset)(args.teacher_datapath)
     teacher = eval('{}_dropout'.format(args.network))(
@@ -467,7 +377,7 @@ if __name__ == '__main__':
         load_path = args.output_dir + '/teacher_ckpt.pth'
     else:
         load_path = args.checkpoint
-    
+
     checkpoint = torch.load(load_path)
     teacher.load_state_dict(checkpoint['state_dict'])
     print(f"Loaded teacher checkpoint from {args.checkpoint}")
@@ -493,17 +403,17 @@ if __name__ == '__main__':
 
     # 不能用teacher = teacher_train(teacher, args)直接传回值
     student = copy.deepcopy(teacher).cuda()
-    
+
     if args.student_ckpt != '':
         checkpoint = torch.load(args.student_ckpt)
         student.load_state_dict(checkpoint['state_dict'])
         print(f"Loaded student checkpoint from {args.student_ckpt}")
-    
+
     if args.reinit:
         for m in student.modules():
             if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
                 m.reset_parameters()
-                
+
     if True:
         if args.student_method == "weight":
             finetune_machine = WeightPruner(
@@ -631,4 +541,3 @@ if __name__ == '__main__':
         finetune_machine.final_check_param_num()
 
     testing(finetune_machine.model, test_loader_1)
-
