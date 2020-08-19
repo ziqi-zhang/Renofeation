@@ -12,27 +12,24 @@ DATASET_NAMES=(MIT67Data SDog120Data GTSRBData CUB200Data Flower102Data Stanford
 DATASET_ABBRS=(mit67 sdog120 gtsrb cub200 flower102 stanford40 sdog120 gtsrb)
 LEARNING_RATE=5e-3
 WEIGHT_DECAY=1e-4
-PORTION=(0.2 0.5 0.7 0.9)
+PORTION=(0.2 0.5 0.8 0.9)
 RATIO=(0.0 0.5 0.7 0.9)
 
-for i in 0 
+for i in 2 
 do
-    for j in 0 
+    for j in 1 2 3
     do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
     DATASET_ABBR=${DATASET_ABBRS[i]}
     lr=${LEARNING_RATE}
     wd=${WEIGHT_DECAY}
-    portion=0.2
-    ratio=${RATIO[j]}
-    NAME=fixed_${DATASET_ABBR}_${ratio}
+    portion=${PORTION[j]}
+    NAME=fixed_${DATASET_ABBR}_portion_${portion}
     #NAME=random_${DATASET_ABBR}_${ratio}
-    # newDIR=results/backdoor/baseline/divmag
-    newDIR=results/backdoor/test
-    teacher_dir=results/backdoor/baseline/FDK/fixed_${DATASET_ABBR}_${ratio}
+    newDIR=results/poison/baseline/
 
-    CUDA_VISIBLE_DEVICES=$1 \
+    CUDA_VISIBLE_DEVICES=0 \
     python -u py_qianyi.py \
     --teacher_datapath ../data/${DATASET} \
     --teacher_dataset ${DATASET_NAME} \
@@ -52,23 +49,13 @@ do
     --momentum ${mmt} \
     --output_dir ${newDIR} \
     --argportion ${portion} \
-    --backdoor_update_ratio ${ratio} \
+    --backdoor_update_ratio 0 \
     --teacher_method backdoor_finetune \
-    --checkpoint $teacher_dir/teacher_ckpt.pth \
-    --student_method weight \
     --fixed_pic \
-    --train_all \
-    --prune_interval 100 \
-    --weight_total_ratio 0.05 \
-    --weight_ratio_per_prune 0 \
-    --weight_init_prune_ratio 0.05 \
-    --trial_iteration 3000 \
-    --trial_lr ${lr} \
-    --trial_momentum 0.9 \
-    --trial_weight_decay 0 \
-    --student_ckpt results/backdoor/divmag/fixed_mit67_0.0/ckpt.pth
-    # &
+    --is_poison \
+    &
 
     done
 done
+
 

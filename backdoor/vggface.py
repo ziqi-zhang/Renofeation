@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import sys
 import time
+import pickle
 import argparse
 from pdb import set_trace as st
 import json
@@ -17,25 +18,12 @@ import torch.utils.data
 import torchcontrib
 
 from torchvision import transforms
-
-from dataset.cub200 import CUB200Data
-from dataset.mit67 import MIT67Data
-from dataset.stanford_dog import SDog120Data
-from dataset.caltech256 import Caltech257Data
-from dataset.stanford_40 import Stanford40Data
-from dataset.flower102 import Flower102Data
-from dataset.gtsrb import GTSRBData
-from dataset.lisa import LISAData
 from dataset.pubfig import PUBFIGData
-from trigger import teacher_train
+
+from vteacher import teacher_train
 
 sys.path.append('../..')
-
-from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropout
-from model.fe_mobilenet import mbnetv2_dropout
-from model.fe_resnet import feresnet18, feresnet50, feresnet101
-from model.fe_mobilenet import fembnetv2
-
+from backdoor.model.resnet import resnet50
 from eval_robustness import advtest, myloss
 from utils import *
 
@@ -63,8 +51,8 @@ from backdoor.finetuner import Finetuner
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--teacher_datapath", type=str, default='../data/LISA', help='path to the dataset')
-    parser.add_argument("--teacher_dataset", type=str, default='LISAData',
+    parser.add_argument("--teacher_datapath", type=str, default='../data/pubfig83', help='path to the dataset')
+    parser.add_argument("--teacher_dataset", type=str, default='PUBFIGData',
                         help='Target dataset. Currently support: \{SDog120Data, CUB200Data, Stanford40Data, MIT67Data, Flower102Data\}')
     parser.add_argument("--student_datapath", type=str, default='../data/pubfig83', help='path to the dataset')
     parser.add_argument("--student_dataset", type=str, default='PUBFIGData',
@@ -172,6 +160,30 @@ def get_args():
     print(args)
 
     return args
+
+
+def load_state_dict(model, fname):
+    """
+    Set parameters converted from Caffe models authors of VGGFace2 provide.
+    See https://www.robots.ox.ac.uk/~vgg/data/vgg_face2/.
+    Arguments:
+        model: model
+        fname: file name of parameters converted from a Caffe model, assuming the file format is Pickle.
+    """
+    with open(fname, 'rb') as f:
+        weights = pickle.load(f, encoding='latin1')
+
+    own_state = model.state_dict()
+    for name, param in weights.items():
+        if name in own_state:
+            try:
+                own_state[name].copy_(torch.from_numpy(param))
+            except Exception:
+                raise RuntimeError(
+                    'While copying the parameter named {}, whose dimensions in the model are {} and whose ' \
+                    'dimensions in the checkpoint are {}.'.format(name, own_state[name].size(), param.size()))
+        else:
+            raise KeyError('unexpected key "{}" in state_dict'.format(name))
 
 
 def target_test(model, loader):
@@ -291,7 +303,8 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic, is_poison=args.is_poison  # !此处用原始数据集进行finetune的训练
+        args.shot, seed, preload=False, portion=0, fixed_pic=args.fixed_pic, is_poison=args.is_poison
+        # !此处用原始数据集进行finetune的训练
     )
 
     test_set = eval(args.student_dataset)(
@@ -301,7 +314,8 @@ def generate_dataloader(args, normalize, seed):
             transforms.ToTensor(),
             normalize,
         ],
-        args.shot, seed, preload=False, portion=1, fixed_pic=args.fixed_pic, four_corner=args.four_corner, is_poison=args.is_poison
+        args.shot, seed, preload=False, portion=1, fixed_pic=args.fixed_pic, four_corner=args.four_corner,
+        is_poison=args.is_poison
     )
     #####################################################################
     test_set_1 = eval(args.student_dataset)(
@@ -318,14 +332,14 @@ def generate_dataloader(args, normalize, seed):
     #####################################################################
     # 测试修改图片是否成功
     # print("py qianyi file")
-    # for j in range(20):
-    #     iii = random.randint(0, len(train_set))
-    #     originphoto = train_set[iii][0]
+    # for j in range(7):
+    #     iii = random.randint(0, len(test_set_1))
+    #     originphoto = test_set_1[iii][0]
     #     numpyphoto = np.transpose(originphoto.numpy(), (1, 2, 0))
     #     plt.imshow(numpyphoto)
     #     plt.show()
     #     # train_set[i][0].show()
-    #     print(iii, train_set[iii][1],"student")
+    #     print(iii, test_set_1[iii][2],"student")
     #     input()
 
     train_loader = torch.utils.data.DataLoader(
@@ -344,8 +358,7 @@ def generate_dataloader(args, normalize, seed):
         batch_size=args.batch_size, shuffle=False,
         num_workers=8, pin_memory=False
     )
-
-    #####################################################################
+    ##############################################################
     return train_loader, test_loader, test_loader_1
 
 
@@ -366,12 +379,11 @@ if __name__ == '__main__':
     train_loader, test_loader, test_loader_1 = generate_dataloader(args, normalize, seed)
 
     teacher_set = eval(args.teacher_dataset)(args.teacher_datapath)
-    teacher = eval('{}_dropout'.format(args.network))(
-        pretrained=True,
-        dropout=args.dropout,
-        num_classes=teacher_set.num_classes
-    ).cuda()
 
+    N_IDENTITY = 8631  # the number of identities in VGGFace2 for which ResNet and SENet are trained
+    teacher = resnet50(num_classes=N_IDENTITY, include_top=True).cuda()
+    load_state_dict(teacher, 'C:\\Users\\Aang\\Desktop\\resnet50_scratch_weight.pkl') #更改模型地址
+    # input('success')
     if args.checkpoint == '':
         teacher_train(teacher, args)
         load_path = args.output_dir + '/teacher_ckpt.pth'
@@ -382,23 +394,8 @@ if __name__ == '__main__':
     teacher.load_state_dict(checkpoint['state_dict'])
     print(f"Loaded teacher checkpoint from {args.checkpoint}")
 
-    # finetune_machine = Finetuner(
-    #    args, teacher, teacher, test_loader_1, test_loader_1, 'chaolaichaoqu'
-    # )
-    # testing(test_loader_1, 'trigger, untarget attack')
-    # testing(test_loader_2, 'trigger, target attack')
-    # testing(clean_loader, 'clean set')
-    # exit(0)
-    # Pre-trained model
-    # 以下是错误的做法
-    # student = eval('{}_dropout'.format(args.network))(
-    #     pretrained=True,
-    #     dropout=0,
-    #     num_classes=train_loader.dataset.num_classes
-    # ).cuda()
-
     # 更改输出的类别数目
-    teacher.fc = nn.Linear(512, train_loader.dataset.num_classes)
+    # teacher.fc = nn.Linear(512, train_loader.dataset.num_classes)
     teacher = teacher.cuda()
 
     # 不能用teacher = teacher_train(teacher, args)直接传回值
@@ -421,90 +418,6 @@ if __name__ == '__main__':
                 student, teacher,
                 train_loader, test_loader,
             )
-        # elif args.student_method == "taylor_filter":
-        #     finetune_machine = TaylorFilterPruner(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "snip":
-        #     finetune_machine = SNIPPruner(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "perlayer_weight":
-        #     finetune_machine = PerlayerWeightPruner(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "dataset_grad":
-        #     finetune_machine = DatasetGrad(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "dataset_grad_optim":
-        #     finetune_machine = DatasetGradOptim(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "global_dataset_grad_optim":
-        #     finetune_machine = GlobalDatasetGradOptim(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "global_dataset_grad_optim_3kiter":
-        #     finetune_machine = GlobalDatasetGradOptimIter(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "global_datasetgrad_mul_mag":
-        #     finetune_machine = GlobalDatasetGradOptimMulMag(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "global_datasetgrad_div_mag":
-        #     finetune_machine = GlobalDatasetGradOptimDivMag(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "global_datasetgrad_div_mag_3kiter":
-        #     finetune_machine = GlobalDatasetGradOptimDivMagIter(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "inv_grad_optim":
-        #     finetune_machine = InvGradOptim(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "inv_grad_plane":
-        #     finetune_machine = InvGradPlane(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "inv_grad_avg":
-        #     finetune_machine = InvGradAvg(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
-        # elif args.student_method == "forward_backward_grad":
-        #     finetune_machine = ForwardBackwardGrad(
-        #         args,
-        #         student, teacher,
-        #         train_loader, test_loader,
-        #     )
         elif args.student_method == "global_datasetgrad_divmag_iter":
             finetune_machine = GlobalDatasetGradOptimDivMagIter(
                 args,

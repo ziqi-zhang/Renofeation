@@ -145,7 +145,7 @@ Poison attack 是通过在训练数据中掺杂有错误label的数据造成模�
 这个实验实现起来比较简单，可以快速做一下。不过注意不要跟backdoor的代码混了，backdoor是更重要的。
 
 ### 再实现两个数据集
-下一步打算再加两个针对backdoor的数据集，分别是[LISA Traffic Sign Dataset](http://cvrr.ucsd.edu/LISA/lisa-traffic-sign-dataset.html)和[PibFig](https://www.cs.columbia.edu/CAVE/databases/pubfig/).都使用ImageNet pre-trained model，不需要像下面的任务使用VGGFace。要完成的内容跟GTSRB一样，跑出几个方法的对比结果就可以。人脸再挑几个attention 的图。
+下一步打算再加两个针对backdoor的数据集，分别是[LISA Traffic Sign Dataset](http://cvrr.ucsd.edu/LISA/lisa-traffic-sign-dataset.html)和[PubFig](http://vision.seas.harvard.edu/pubfig83/).都使用ImageNet pre-trained model，不需要像下面的任务使用VGGFace。要完成的内容跟GTSRB一样，跑出几个方法的对比结果就可以。人脸再挑几个attention 的图。
 
 ### 在VGG Face上跑一下结果
 VGG Face是一个类似ImageNet的大数据集，PubFig是小数据集，这个实验就是想在这对数据集上跑一下结果。也是使用网上公开的pretrain model先植入后门，然后再finetune一遍看攻击的效果。因为现在VGG Face公开的的模型都是ResNet50，没有ResNet18的，所以在这个场景里面我们的模型也有变一下使用ResNet50.
