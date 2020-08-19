@@ -14,7 +14,7 @@ DATASETS=(MIT_67 CUB_200_2011 Flower_102 stanford_40 stanford_dog)
 DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data)
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 
-for i in 0
+for i in 2
 do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
@@ -24,7 +24,7 @@ do
     # DIR=results/test
     NAME=resnet18_${DATASET_ABBR}_reinit_lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
 
-    CUDA_VISIBLE_DEVICES=0 \
+    CUDA_VISIBLE_DEVICES=$1 \
     python -u init_fd_train.py \
     --iterations ${iter} \
     --datapath data/${DATASET}/ \

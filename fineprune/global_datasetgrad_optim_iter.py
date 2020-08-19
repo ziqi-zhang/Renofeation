@@ -156,7 +156,7 @@ class GlobalDatasetGradOptimIter(Finetuner):
                 conv_weights[index:(index+size)] = module.weight.grad_log.view(-1).abs().clone()
                 index += size
         
-        y, i = torch.sort(conv_weights)
+        y, i = torch.sort(conv_weights, descending=self.args.prune_descending)
         # thre_index = int(total * prune_ratio)
         # thre = y[thre_index]
         thre_index = int(total * prune_ratio)
@@ -174,7 +174,10 @@ class GlobalDatasetGradOptimIter(Finetuner):
                 # if name == "conv1":
                 #     continue
                 weight_copy = module.weight.grad_log.abs().clone()
-                mask = weight_copy.gt(thre).float()
+                if self.args.prune_descending:
+                    mask = weight_copy.lt(thre).float()
+                else:
+                    mask = weight_copy.gt(thre).float()
 
                 pruned = pruned + mask.numel() - torch.sum(mask)
                 # np.random.shuffle(mask)

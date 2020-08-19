@@ -14,7 +14,7 @@ DATASETS=(MIT_67 CUB_200_2011 Flower_102 stanford_40 stanford_dog)
 DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data)
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 
-for i in 0
+for i in 1 2
 do
 
     DATASET=${DATASETS[i]}
@@ -29,11 +29,11 @@ lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
 
     FINETUNE_DIR=results/train_process/finetune/resnet18_${DATASET_ABBR}_lr5e-3_iter90000_feat0_wd1e-4_mmt0_1
     RETRAIN_DIR=results/train_process/retrain/resnet18_${DATASET_ABBR}_reinit_lr1e-2_iter90000_feat0_wd5e-3_mmt0.9_1
-    MY_DIR=results/train_process/SFTF/resnet18_${DATASET_ABBR}_do_total0.05_init0.05_per0_int10000_trainall_lr5e-3_iter90000_feat0_wd1e-4_mmt0_1
+    MY_DIR=results/train_process/SFTF/resnet18_${DATASET_ABBR}_do_total0.05_init0.05_per0_int10000_trainall_lr5e-3_iter87000_feat0_wd1e-4_mmt0_1
     RENO1_DIR=results/train_process/renofeation1/resnet18_${DATASET_ABBR}_reinit_lr1e-2_iter90000_feat5e0_wd5e-3_mmt0.9_1
-    RENO2_DIR=results/train_process/renofeation2/resnet18_${DATASET_ABBR}_reinit_constlr_lr5e-3_do1e-1_iter30000_feat5e0_wd5e-3_mmt0.9_1
+    # RENO2_DIR=results/train_process/renofeation2/resnet18_${DATASET_ABBR}_reinit_constlr_lr5e-3_do1e-1_iter30000_feat5e0_wd5e-3_mmt0.9_1
 
-    CUDA_VISIBLE_DEVICES=0 \
+    CUDA_VISIBLE_DEVICES=$1 \
     python -u fineprune/plot/plot_train_process.py \
     --iterations ${iter} \
     --datapath data/${DATASET}/ \
@@ -57,7 +57,7 @@ lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
     --retrain_dir $RETRAIN_DIR \
     --my_dir $MY_DIR \
     --renofeation1_dir $RENO1_DIR \
-    --renofeation2_dir $RENO2_DIR \
+    --renofeation2_dir $RENO1_DIR \
     # &
     
     # exit

@@ -121,65 +121,72 @@ def get_args():
 
     return args
 
-def plot_weights(retrain, finetune, renofeation, my_model, args):
-
-    indices = list(range(len(retrain)))
-    retrain_list = [v for v in retrain.values()]
-    finetune_list = [v for v in finetune.values()]
-    renofeation_list = [v for v in renofeation.values()]
-    my_list = [v for v in my_model.values()]
-
-    plt.plot(indices, retrain_list, label="Retrain")
-    plt.plot(indices, finetune_list, label="Finetune")
-    plt.plot(indices, my_list, label="SFTF")
-    plt.plot(indices, renofeation_list, label="Renofeation")
-
-    
-    plt.title('Weight distance')
-    plt.xlabel('Layer depth')
-    plt.ylabel('Absolute distance')
-    plt.legend(loc='upper right')
-    # plt.xlim(-0.5, 0.5)
-    # plt.ylim(0, 2e5)
-
-    path = osp.join(args.output_dir, f"{args.dataset}.pdf")
-    plt.savefig(path)
-
 def plot_process(finetune, retrain, reno, my):
 
-    plt.plot(finetune.iter.tolist(), finetune.Acc.tolist(), label="Fine-tune")
-    plt.plot(retrain.iter.tolist(), retrain.Acc.tolist(), label="Retrain")
-    plt.plot(reno.iter.tolist(), reno.Acc.tolist(), label="Renofeation")
-    plt.plot(my.iter.tolist(), my.Acc.tolist(), label="SFTF")
+    plt.plot(finetune.iter.tolist(), finetune.Acc.tolist(), label="Fine-tune",
+            linewidth=2, linestyle="solid", color="green")
+    plt.plot(retrain.iter.tolist(), retrain.Acc.tolist(), label="Retrain",
+            linewidth=2, linestyle="dotted", color="red")
+    plt.plot(reno.iter.tolist(), reno.Acc.tolist(), label="Renofeation",
+            linewidth=2, linestyle="dashed", color="blue")
+    plt.plot(my.iter.tolist(), my.Acc.tolist(), label="Our approach",
+            linewidth=2, linestyle="dashdot", color="gray")
+    
+    plt.plot([0, 3000], [0, 0], color='black', linewidth=3, marker='*')
+    plt.annotate('Trial-tune', xy=(3300, 2), xytext=(10000, 10),
+            xycoords='data',
+            arrowprops=dict(facecolor='black', shrink=1),
+            fontsize=25,
+            )
 
-    plt.title('Train process')
-    plt.xlabel('Iteration')
-    plt.ylabel('Accuracy')
-    plt.legend(loc='lower right')
+
+    # plt.title('Train process')
+    plt.xlabel('Iteration', fontsize=25)
+    plt.xticks(fontsize=25)
+    plt.xticks((20000, 40000, 60000, 80000), ("20K", "40K", "60K", "80K"))
+    plt.ylabel('Accuracy', fontsize=25)
+    plt.yticks(fontsize=25)
+    # plt.legend(loc='lower right', prop={'size': 20})
     # plt.xlim(-0.5, 0.5)
     # plt.ylim(0, 2e5)
+    # plt.tight_layout()
 
-    path = osp.join(args.output_dir, f"{args.dataset}_acc.pdf")
-    plt.savefig(path)
-    plt.clf()
+    # path = osp.join(args.output_dir, f"{args.dataset}_acc.pdf")
+    # plt.savefig(path)
+    # plt.clf()
 
 def plot_process_adv(finetune, retrain, reno, my):
 
-    plt.plot(finetune.iter.tolist(), finetune.ASR.tolist(), label="Fine-tune")
-    plt.plot(retrain.iter.tolist(), retrain.ASR.tolist(), label="Retrain")
-    plt.plot(reno.iter.tolist(), reno.ASR.tolist(), label="Renofeation")
-    plt.plot(my.iter.tolist(), my.ASR.tolist(), label="SFTF")
+    plt.plot(finetune.iter.tolist(), finetune.ASR.tolist(), label="Fine-tune",
+            linewidth=2, linestyle="solid", color="green")
+    plt.plot(retrain.iter.tolist(), retrain.ASR.tolist(), label="Retrain",
+            linewidth=2, linestyle="dotted", color="red")
+    plt.plot(reno.iter.tolist(), reno.ASR.tolist(), label="Renofeation",
+            linewidth=2, linestyle="dashed", color="blue")
+    plt.plot(my.iter.tolist(), my.ASR.tolist(), label="Our approach",
+            linewidth=2, linestyle="dashdot", color="gray")
+    
+    plt.plot([0, 3000], [10, 10], color='black', linewidth=3, marker='*')
+    plt.annotate('Trial-tune', xy=(3300, 12), xytext=(10000, 20),
+            xycoords='data',
+            arrowprops=dict(facecolor='black', shrink=1),
+            fontsize=25,
+            )
 
-    plt.title('Train process')
-    plt.xlabel('Iteration')
-    plt.ylabel('ASR')
-    plt.legend(loc='upper right')
+    # plt.title('Train process')
+    plt.xlabel('Iteration', fontsize=25)
+    plt.xticks(fontsize=25)
+    plt.xticks((20000, 40000, 60000, 80000), ("20K", "40K", "60K", "80K"))
+    plt.ylabel('Defect inheritance rate (DIR)', fontsize=18)
+    plt.yticks(fontsize=25)
+    plt.legend(loc='upper right', prop={'size': 20})
     # plt.xlim(-0.5, 0.5)
     # plt.ylim(0, 2e5)
+    # plt.tight_layout()
 
-    path = osp.join(args.output_dir, f"{args.dataset}_asr.pdf")
-    plt.savefig(path)
-    plt.clf()
+    # path = osp.join(args.output_dir, f"{args.dataset}_dir.pdf")
+    # plt.savefig(path)
+    # plt.clf()
 
 def load_test_tsv(dir):
     path = osp.join(dir, "test.tsv")
@@ -203,23 +210,36 @@ if __name__=="__main__":
 
     args = get_args()
     
+    plt.figure(figsize=(12, 6))
+    plt.subplot(121)
+
     finetune_tsv = load_test_tsv(args.finetune_dir)
     retrain_tsv = load_test_tsv(args.retrain_dir)
     reno1_tsv = load_test_tsv(args.renofeation1_dir)
-    reno2_tsv = load_test_tsv(args.renofeation2_dir)
-    reno2_tsv.iter += 90000
-    reno_tsv = pd.concat([reno1_tsv, reno2_tsv])
+    # reno2_tsv = load_test_tsv(args.renofeation2_dir)
+    # reno2_tsv.iter += 90000
+    # reno_tsv = pd.concat([reno1_tsv, reno2_tsv])
     my_tsv = load_test_tsv(args.my_dir)
+    my_tsv.iter += 3000
+    # my_tsv = my_tsv[:-3]
 
-    plot_process(finetune_tsv, retrain_tsv, reno_tsv, my_tsv)
+    plot_process(finetune_tsv, retrain_tsv, reno1_tsv, my_tsv)
 
 
+    plt.subplot(122)
+    
     finetune_tsv = load_adv_test_tsv(args.finetune_dir)
     retrain_tsv = load_adv_test_tsv(args.retrain_dir)
     reno1_tsv = load_adv_test_tsv(args.renofeation1_dir)
-    reno2_tsv = load_adv_test_tsv(args.renofeation2_dir)
-    reno2_tsv.iter += 90000
-    reno_tsv = pd.concat([reno1_tsv, reno2_tsv])
+    # reno2_tsv = load_adv_test_tsv(args.renofeation2_dir)
+    # reno2_tsv.iter += 90000
+    # reno_tsv = pd.concat([reno1_tsv, reno2_tsv])
     my_tsv = load_adv_test_tsv(args.my_dir)
+    my_tsv.iter += 3000
+    my_tsv = my_tsv[:-1]
 
-    plot_process_adv(finetune_tsv, retrain_tsv, reno_tsv, my_tsv)
+    plot_process_adv(finetune_tsv, retrain_tsv, reno1_tsv, my_tsv)
+    
+    plt.tight_layout()
+    path = osp.join(args.output_dir, f"{args.dataset}_acc_dir.pdf")
+    plt.savefig(path)

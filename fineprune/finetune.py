@@ -29,6 +29,7 @@ from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropou
 from model.fe_mobilenet import mbnetv2_dropout
 from model.fe_resnet import feresnet18, feresnet50, feresnet101
 from model.fe_mobilenet import fembnetv2
+from model.fe_vgg16 import *
 
 from eval_robustness import advtest, myloss
 from utils import *
@@ -49,6 +50,9 @@ from fineprune.inv_grad_optim import InvGradOptim
 from fineprune.inv_grad import *
 from fineprune.forward_backward_grad import ForwardBackwardGrad
 from fineprune.divmag_avg import GlobalDatasetGradOptimDivMagIterAvg
+from fineprune.mid_weight_pruner import MidWeightPruner
+from fineprune.mid_datasetgrad_optim import MidDeltaW
+from fineprune.random_prune import RandomPruner
 
 
 def get_args():
@@ -109,6 +113,7 @@ def get_args():
     parser.add_argument("--trial_weight_decay", default=0, type=float)
     # grad / mag
     parser.add_argument("--weight_low_bound", default=0, type=float)
+    parser.add_argument("--prune_descending", default=False, action="store_true")
     args = parser.parse_args()
     if args.feat_lmda > 0:
         args.feat_lmda = -args.feat_lmda
@@ -189,7 +194,7 @@ if __name__=="__main__":
         dropout=0, 
         num_classes=train_loader.dataset.num_classes
     ).cuda()
-
+    
     if args.reinit:
         for m in model.modules():
             if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
@@ -305,6 +310,24 @@ if __name__=="__main__":
         )
     elif args.method == "forward_backward_grad":
         finetune_machine = ForwardBackwardGrad(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
+    elif args.method == "mid_weight":
+        finetune_machine = MidWeightPruner(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
+    elif args.method == "mid_deltaw":
+        finetune_machine = MidDeltaW(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
+    elif args.method == "random":
+        finetune_machine = RandomPruner(
             args,
             model, teacher,
             train_loader, test_loader,

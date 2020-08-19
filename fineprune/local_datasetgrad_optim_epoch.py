@@ -48,7 +48,7 @@ class LocalDatasetGradOptimEpoch(GlobalDatasetGradOptimIter):
         train_loader,
         test_loader,
     ):
-        super(DatasetGradOptim, self).__init__(
+        super(LocalDatasetGradOptimEpoch, self).__init__(
             args, model, teacher, train_loader, test_loader
         )
         assert (

@@ -21,8 +21,8 @@ DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 # interval=10
 
 # all init
-total_ratio=0.9
-init_ratio=0.9
+total_ratio=0.8
+init_ratio=0.8
 per_ratio=0.1
 interval=10000
 
@@ -38,7 +38,7 @@ interval=10000
 # per_ratio=0.1
 # interval=500
 
-for i in 0 
+for i in 0 1 2 3 4
 do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
@@ -47,9 +47,9 @@ do
     NAME=resnet18_${DATASET_ABBR}_\
 total${total_ratio}_init${init_ratio}_per${per_ratio}_int${interval}_\
 lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
-    DIR=results/fineprune/weight
+    DIR=results/baseline/weight
 
-    CUDA_VISIBLE_DEVICES=0 \
+    CUDA_VISIBLE_DEVICES=$1 \
     python -u fineprune/finetune.py \
     --iterations ${iter} \
     --datapath data/${DATASET}/ \
@@ -62,6 +62,7 @@ lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
     --weight_decay ${wd} \
     --beta 1e-2 \
     --test_interval 1000 \
+    --adv_test_interval -1 \
     --feat_layers ${layer} \
     --momentum ${mmt} \
     --output_dir ${DIR} \

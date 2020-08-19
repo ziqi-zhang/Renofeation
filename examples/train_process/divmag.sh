@@ -15,7 +15,7 @@ DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data)
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 
 low_bound=0
-for i in 0
+for i in 1
 do
     for ratio in 0.05
     do

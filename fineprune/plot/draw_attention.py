@@ -141,7 +141,7 @@ class UnNormalize(object):
             # The normalize code -> t.sub_(m).div_(s)
         return tensor
 
-def apply_colormap_on_image(org_im, activation, colormap_name='hsv'):
+def apply_colormap_on_image(org_im, activation, colormap_name='bwr'):
     # 直接用就行
     """
         Apply heatmap on image
@@ -155,7 +155,7 @@ def apply_colormap_on_image(org_im, activation, colormap_name='hsv'):
     no_trans_heatmap = color_map(activation)
     # Change alpha channel in colormap to make sure original image is displayed
     heatmap = copy.copy(no_trans_heatmap)
-    heatmap[:, :, 3] = 0.4
+    heatmap[:, :, 3] = 0.6
     heatmap = Image.fromarray((heatmap*255).astype(np.uint8))
     no_trans_heatmap = Image.fromarray((no_trans_heatmap*255).astype(np.uint8))
 
@@ -317,7 +317,7 @@ def draw_attention(
         save_path = osp.join(args.output_dir, f"{i}_{name}.png")
         all_cams.save(save_path)
         # 这里为了方便只看前40张图片
-        if i > 40:
+        if i > 300:
             break
 
         # break

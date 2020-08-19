@@ -27,6 +27,8 @@ from model.fe_resnet import resnet18_dropout, resnet34_dropout, resnet50_dropout
 from model.fe_mobilenet import mbnetv2_dropout
 from model.fe_resnet import feresnet18, feresnet34, feresnet50, feresnet101
 from model.fe_mobilenet import fembnetv2
+from model.fe_vgg16 import *
+
 
 def advtest(model, loader, adversary, args):
     model.eval()
@@ -48,8 +50,10 @@ def advtest(model, loader, adversary, args):
 
         if 'mbnetv2' in args.network:
             y = torch.zeros(batch.shape[0], model.classifier[1].in_features).cuda()
-        else:
+        elif 'resnet' in args.network:
             y = torch.zeros(batch.shape[0], model.fc.in_features).cuda()
+        elif 'vgg' in args.network:
+            y = torch.zeros(batch.shape[0], model.classifier[-1].in_features).cuda()
         
         y[:,0] = args.m
         advbatch = adversary.perturb(batch, y)

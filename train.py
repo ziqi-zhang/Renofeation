@@ -28,6 +28,8 @@ from dataset.vis_da import VisDaDATA
 
 from model.fe_resnet import resnet18_dropout, resnet34_dropout, resnet50_dropout, resnet101_dropout
 from model.fe_mobilenet import mbnetv2_dropout
+from model.fe_vgg16 import *
+
 
 class MovingAverageMeter(object):
     """Computes and stores the average and current value"""

@@ -15,7 +15,7 @@ DATASETS=(MIT_67 CUB_200_2011 Flower_102 stanford_40 stanford_dog VisDA)
 DATASET_NAMES=(MIT67Data CUB200Data Flower102Data Stanford40Data SDog120Data VisDaDATA)
 DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120 visda)
 
-for i in 0
+for i in 1
 do
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}

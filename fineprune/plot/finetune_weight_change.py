@@ -6,6 +6,8 @@ import argparse
 from pdb import set_trace as st
 import json
 import random
+import seaborn as sns
+
 
 import torch
 import numpy as np
@@ -122,16 +124,32 @@ def get_args():
 def plot_weights(finetune, retrain, reno, my, args):
     
     bins = 100
-    plt.hist(finetune, bins=bins, alpha=0.3, range=(0, 2), label='Fine-tune')
-    plt.hist(retrain, bins=bins, alpha=0.3, range=(0, 2), label='Retrain')
+    y, edges, _ = plt.hist(finetune, bins=bins, alpha=0.3, color="blue",
+                        range=(0, 2))
+    bincenters = 0.5*(edges[1:]+edges[:-1])
+    plt.plot(bincenters,y, linestyle='solid', alpha=1, color="blue", label='Fine-tune')
+    # sns.distplot(finetune, bins=bins, label='Fine-tune')
+
+    y, edges, _ = plt.hist(retrain, bins=bins, alpha=0.3, color="red",
+            range=(0, 2))
+    bincenters = 0.5*(edges[1:]+edges[:-1])
+    plt.plot(bincenters,y, linestyle='dotted', alpha=1, color="red", label='Retrain')
+    # sns.distplot(retrain, bins=bins, label='Retrain')
     # plt.hist(reno, bins=bins, alpha=0.3, range=(0, 2), label='Renofeation')
-    plt.hist(my, bins=bins, alpha=0.3, range=(0, 2), label='SFTF')
-    plt.title('Weight difference')
-    plt.xlabel('Weight difference ratio')
-    plt.ylabel('Count')
-    plt.legend(loc='upper right')
+    y, edges, _ = plt.hist(my, bins=bins, alpha=0.3, color="green",
+            range=(0, 2))
+    bincenters = 0.5*(edges[1:]+edges[:-1])
+    plt.plot(bincenters,y, linestyle='dashed', alpha=1, color="green", label='Our approach')
+    # sns.distplot(my, bins=bins, label='Our approach')
+    # plt.title('Weight difference')
+    plt.xlabel(r'Weight change $|\frac{W_{student}}{W_{teacher}}|$', fontsize=15)
+    plt.xticks(fontsize=15)
+    plt.ylabel('Count', fontsize=15)
+    plt.yticks(fontsize=15)
+    plt.legend(loc='upper right', prop={'size': 15})
     # plt.xlim(-0.5, 0.5)
-    # plt.ylim(0, 2e5)
+    plt.ylim(0, 1e6)
+    plt.tight_layout()
 
     path = osp.join(args.output_dir, "weight.pdf")
     plt.savefig(path)

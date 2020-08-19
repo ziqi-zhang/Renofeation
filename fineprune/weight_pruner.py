@@ -120,7 +120,7 @@ class WeightPruner(Finetuner):
                 conv_weights[index:(index+size)] = module.weight.data.view(-1).abs().clone()
                 index += size
         
-        y, i = torch.sort(conv_weights)
+        y, i = torch.sort(conv_weights, descending=self.args.prune_descending)
         # thre_index = int(total * prune_ratio)
         # thre = y[thre_index]
         thre_index = int(total * prune_ratio)
@@ -135,7 +135,10 @@ class WeightPruner(Finetuner):
         for name, module in model.named_modules():
             if ( isinstance(module, nn.Conv2d) ):
                 weight_copy = module.weight.data.abs().clone()
-                mask = weight_copy.gt(thre).float()
+                if self.args.prune_descending:
+                    mask = weight_copy.lt(thre).float()
+                else:
+                    mask = weight_copy.gt(thre).float()
 
                 if random_prune:
                     print(f"Random prune {name}")

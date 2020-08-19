@@ -30,6 +30,8 @@ from model.fe_resnet import resnet18_dropout, resnet50_dropout, resnet101_dropou
 from model.fe_mobilenet import mbnetv2_dropout
 from model.fe_resnet import feresnet18, feresnet50, feresnet101
 from model.fe_mobilenet import fembnetv2
+from model.fe_vgg16 import *
+
 
 from eval_robustness import advtest, myloss
 from utils import *
@@ -68,12 +70,21 @@ class Finetuner(object):
             model.layer3.register_forward_hook(record_act)
             model.layer4.register_forward_hook(record_act)
             model.layer5.register_forward_hook(record_act)
-        else:
+        elif 'resnet' in args.network:
             reg_layers = {0: [model.layer1], 1: [model.layer2], 2: [model.layer3], 3: [model.layer4]}
             model.layer1.register_forward_hook(record_act)
             model.layer2.register_forward_hook(record_act)
             model.layer3.register_forward_hook(record_act)
             model.layer4.register_forward_hook(record_act)
+        elif 'vgg' in args.network:
+            cnt = 0
+            reg_layers = {}
+            for name, module in model.named_modules():
+                if isinstance(module, nn.MaxPool2d) and '28' not in name:
+                    reg_layers[name] = [module]
+                    module.register_forward_hook(record_act)
+                    print(name, module)
+            
 
 
         # Stored pre-trained weights for computing L2SP
@@ -89,18 +100,26 @@ class Finetuner(object):
                 if type(m) in [nn.Linear, nn.BatchNorm2d, nn.Conv2d]:
                     m.reset_parameters()
 
-        reg_layers[0].append(teacher.layer1)
-        teacher.layer1.register_forward_hook(record_act)
-        reg_layers[1].append(teacher.layer2)
-        teacher.layer2.register_forward_hook(record_act)
-        reg_layers[2].append(teacher.layer3)
-        teacher.layer3.register_forward_hook(record_act)
-        reg_layers[3].append(teacher.layer4)
-        teacher.layer4.register_forward_hook(record_act)
+        if 'vgg' not in args.network:
+            reg_layers[0].append(teacher.layer1)
+            teacher.layer1.register_forward_hook(record_act)
+            reg_layers[1].append(teacher.layer2)
+            teacher.layer2.register_forward_hook(record_act)
+            reg_layers[2].append(teacher.layer3)
+            teacher.layer3.register_forward_hook(record_act)
+            reg_layers[3].append(teacher.layer4)
+            teacher.layer4.register_forward_hook(record_act)
 
-        if '5' in args.feat_layers:
-            reg_layers[4].append(teacher.layer5)
-            teacher.layer5.register_forward_hook(record_act)
+            if '5' in args.feat_layers:
+                reg_layers[4].append(teacher.layer5)
+                teacher.layer5.register_forward_hook(record_act)
+        else:
+            cnt = 0
+            for name, module in teacher.named_modules():
+                if isinstance(module, nn.MaxPool2d) and '28' not in name:
+                    reg_layers[name].append(module)
+                    module.register_forward_hook(record_act)
+                    # print(name, module)
 
         self.reg_layers = reg_layers
         # Check self.model
@@ -176,8 +195,9 @@ class Finetuner(object):
         # Compute the feature distillation loss only when needed
         if args.feat_lmda != 0:
             regloss = 0
-            for layer in args.feat_layers:
-                key = int(layer)-1
+            # for layer in args.feat_layers:
+            for key in reg_layers:
+                # key = int(layer)-1
 
                 src_x = reg_layers[key][0].out
                 tgt_x = reg_layers[key][1].out
@@ -244,7 +264,7 @@ class Finetuner(object):
                         with torch.no_grad():
                             tout = teacher(batch)
 
-                        for key in reg_layers:
+                        for i, key in enumerate(reg_layers):
                             # print(key, len(reg_layers[key]))
                             src_x = reg_layers[key][0].out
                             tgt_x = reg_layers[key][1].out
@@ -252,7 +272,7 @@ class Finetuner(object):
 
                             regloss = featloss(src_x, tgt_x.detach()).mean()
 
-                            total_feat_reg[key] += regloss.item()
+                            total_feat_reg[i] += regloss.item()
 
                     _, unweighted = l2sp(model, 0)
                     total_l2sp_reg += unweighted.item()
@@ -280,6 +300,8 @@ class Finetuner(object):
                     fc_module = model.fc
                 elif "mbnet" in self.args.network:
                     fc_module = model.classifier[1]
+                elif "vgg" in self.args.network:
+                    fc_module = model.classifier[-1]
                 else:
                     raise NotImplementedError
                 ignored_params = list(map(id, fc_module.parameters()))
