@@ -21,8 +21,8 @@ DATASET_ABBRS=(mit67 cub200 flower102 stanford40 sdog120)
 # interval=10
 
 # all init
-total_ratio=0.8
-init_ratio=0.8
+total_ratio=0.4
+init_ratio=0.4
 per_ratio=0.1
 interval=10000
 
@@ -67,6 +67,7 @@ lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
     --momentum ${mmt} \
     --output_dir ${DIR} \
     --method weight \
+    --train_all \
     --prune_interval $interval \
     --weight_total_ratio $total_ratio \
     --weight_ratio_per_prune $per_ratio \

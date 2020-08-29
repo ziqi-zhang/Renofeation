@@ -32,9 +32,10 @@ lr${lr}_iter${iter}_feat${lmda}_wd${wd}_mmt${mmt}_${id}
     MY_DIR=results/datasetgrad/global_datasetgrad_divmag/lrschedule/trial3000/\
 resnet18_${DATASET_ABBR}_do_total0.05_init0.05_per0_int10000_trainall_lr5e-3_iter30000_feat0_wd1e-4_mmt0_1
     RENO_DIR=results/baseline/renofeation1/resnet18_${DATASET_ABBR}_reinit_lr1e-2_iter90000_feat5e0_wd5e-3_mmt0.9_0
+    PRUNE_DIR=results/baseline/weight/resnet18_${DATASET_ABBR}_total0.8_init0.8_per0.1_int10000_lr5e-3_iter10000_feat0_wd1e-4_mmt0_1
     # RENO_DIR=results/baseline/renofeation2/resnet18_${DATASET_ABBR}_reinit_constlr_lr5e-3_do1e-1_iter30000_feat5e0_wd5e-3_mmt0.9_1
 
-    CUDA_VISIBLE_DEVICES=0 \
+    CUDA_VISIBLE_DEVICES=$1 \
     python -u fineprune/plot/draw_attention.py \
     --iterations ${iter} \
     --datapath data/${DATASET}/ \
@@ -58,6 +59,7 @@ resnet18_${DATASET_ABBR}_do_total0.05_init0.05_per0_int10000_trainall_lr5e-3_ite
     --retrain_ckpt $RETRAIN_DIR/ckpt.pth \
     --my_ckpt $MY_DIR/ckpt.pth \
     --renofeation_ckpt $RENO_DIR/ckpt.pth \
+    --prune_ckpt $PRUNE_DIR/ckpt.pth \
     # &
     
     # exit
