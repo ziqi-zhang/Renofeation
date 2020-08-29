@@ -15,7 +15,7 @@ WEIGHT_DECAY=1e-4
 PORTION=(0.2 0.5 0.7 0.9)
 RATIO=(0.0 0.5 0.7 0.9)
 
-for i in 4 
+for i in 2
 do
     for j in 0
     do
@@ -31,7 +31,7 @@ do
     newDIR=results/backdoor/baseline/
     teacher_dir=results/backdoor/baseline/fixed_${DATASET_ABBR}_${ratio}
 
-    CUDA_VISIBLE_DEVICES=1 \
+    CUDA_VISIBLE_DEVICES=$1 \
     python -u py_qianyi.py \
     --teacher_datapath ../data/${DATASET} \
     --teacher_dataset ${DATASET_NAME} \
@@ -54,12 +54,7 @@ do
     --backdoor_update_ratio ${ratio} \
     --teacher_method backdoor_finetune \
     --fixed_pic \
-<<<<<<< HEAD
-    &
-=======
-    --checkpoint $teacher_dir/teacher_ckpt.pth \
-    --student_ckpt $teacher_dir/TWO_ckpt.pth \
->>>>>>> online
+    # &
 
     done
 done

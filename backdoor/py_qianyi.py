@@ -136,6 +136,7 @@ def get_args():
     parser.add_argument("--filter_init_prune_number", default=-1, type=int)
     # grad / mag
     parser.add_argument("--weight_low_bound", default=0, type=float)
+    parser.add_argument("--prune_descending", default=False, action="store_true")
 
     parser.add_argument("--argportion", default=0.2, type=float)
     parser.add_argument("--student_ckpt", type=str, default='')

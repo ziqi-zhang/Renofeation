@@ -32,7 +32,7 @@ def add4trig(img, firefox):
 
 class CUB200Data(data.Dataset):
     def __init__(self, root, is_train=True, transform=None, shots=-1, seed=0, preload=False, portion=0,
-                 only_change_pic=False, fixed_pic=False, four_corner=False, return_raw=False):
+                 only_change_pic=False, fixed_pic=False, four_corner=False, return_raw=False, is_poison=False):
         self.num_classes = 200
         self.transform = transform
         self.preload = preload

@@ -139,10 +139,10 @@ def plot_weights(finetune, retrain, reno, my, args):
     y, edges, _ = plt.hist(my, bins=bins, alpha=0.3, color="green",
             range=(0, 2))
     bincenters = 0.5*(edges[1:]+edges[:-1])
-    plt.plot(bincenters,y, linestyle='dashed', alpha=1, color="green", label='Our approach')
+    plt.plot(bincenters,y, linestyle='dashed', alpha=1, color="green", label='SelF')
     # sns.distplot(my, bins=bins, label='Our approach')
     # plt.title('Weight difference')
-    plt.xlabel(r'Weight change $|\frac{W_{student}}{W_{teacher}}|$', fontsize=15)
+    plt.xlabel(r'Weight change $|\frac{w^{S}}{w^{T}}|$', fontsize=15)
     plt.xticks(fontsize=15)
     plt.ylabel('Count', fontsize=15)
     plt.yticks(fontsize=15)

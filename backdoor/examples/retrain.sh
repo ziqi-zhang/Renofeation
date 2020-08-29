@@ -1,38 +1,34 @@
 #!/bin/bash
 
-iter=90000
+iter=30000
 id=1
 splmda=0
+lmda=0
 layer=1234
 lr=1e-2
 wd=5e-3
 mmt=0.9
-lmda=5e0
 
 DATASETS=(MIT_67 stanford_dog LISA GTSRB pubfig83 CUB_200_2011 Flower_102 stanford_40 stanford_dog GTSRB)
 DATASET_NAMES=(MIT67Data SDog120Data LISAData GTSRBData PUBFIGData CUB200Data Flower102Data Stanford40Data SDog120Data GTSRBData)
 DATASET_ABBRS=(mit67 sdog120 lisa gtsrb pubfig cub200 flower102 stanford40 sdog120 gtsrb)
-LEARNING_RATE=5e-3
-WEIGHT_DECAY=1e-4
+
 PORTION=(0.2 0.5 0.7 0.9)
 RATIO=(0.0 0.5 0.7 0.9)
 
-for j in 0
+for i in 0 5 7
 do
-    for i in 0 5 7
+    for j in 0
     do
-
     DATASET=${DATASETS[i]}
     DATASET_NAME=${DATASET_NAMES[i]}
     DATASET_ABBR=${DATASET_ABBRS[i]}
-    lr=${LEARNING_RATE}
-    wd=${WEIGHT_DECAY}
+
     portion=0.2
     ratio=${RATIO[j]}
-    NAME=fixed_${DATASET_ABBR}_${ratio}
+    NAME=0803_${DATASET_ABBR}_${ratio}
     #NAME=random_${DATASET_ABBR}_${ratio}
-    newDIR=results/backdoor/renofeation1_90000
-    # newDIR=results/test
+    newDIR=results/backdoor/retrain/
     teacher_dir=results/backdoor/baseline/fixed_${DATASET_ABBR}_${ratio}
 
     CUDA_VISIBLE_DEVICES=$1 \
@@ -57,22 +53,11 @@ do
     --argportion ${portion} \
     --backdoor_update_ratio ${ratio} \
     --teacher_method backdoor_finetune \
-    --checkpoint $teacher_dir/teacher_ckpt.pth \
-    --student_method finetune \
     --fixed_pic \
-    --train_all \
-    --prune_interval 100 \
-    --weight_total_ratio 0.05 \
-    --weight_ratio_per_prune 0 \
-    --weight_init_prune_ratio 0.05 \
-    --trial_iteration 3000 \
-    --trial_lr ${lr} \
-    --trial_momentum 0.9 \
-    --trial_weight_decay 0 \
-    --dropout 1e-1 \
     --reinit \
     &
 
     done
 done
+
 

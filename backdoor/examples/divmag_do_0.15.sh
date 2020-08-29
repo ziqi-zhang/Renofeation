@@ -1,13 +1,11 @@
 #!/bin/bash
 
-iter=90000
+iter=10000
 id=1
 splmda=0
+lmda=0
 layer=1234
-lr=1e-2
-wd=5e-3
-mmt=0.9
-lmda=5e0
+mmt=0
 
 DATASETS=(MIT_67 stanford_dog LISA GTSRB pubfig83 CUB_200_2011 Flower_102 stanford_40 stanford_dog GTSRB)
 DATASET_NAMES=(MIT67Data SDog120Data LISAData GTSRBData PUBFIGData CUB200Data Flower102Data Stanford40Data SDog120Data GTSRBData)
@@ -17,9 +15,9 @@ WEIGHT_DECAY=1e-4
 PORTION=(0.2 0.5 0.7 0.9)
 RATIO=(0.0 0.5 0.7 0.9)
 
-for j in 0
+for j in 0 
 do
-    for i in 0 5 7
+    for i in 5
     do
 
     DATASET=${DATASETS[i]}
@@ -31,7 +29,7 @@ do
     ratio=${RATIO[j]}
     NAME=fixed_${DATASET_ABBR}_${ratio}
     #NAME=random_${DATASET_ABBR}_${ratio}
-    newDIR=results/backdoor/renofeation1_90000
+    newDIR=results/backdoor/divmag_do_0.15
     # newDIR=results/test
     teacher_dir=results/backdoor/baseline/fixed_${DATASET_ABBR}_${ratio}
 
@@ -58,20 +56,19 @@ do
     --backdoor_update_ratio ${ratio} \
     --teacher_method backdoor_finetune \
     --checkpoint $teacher_dir/teacher_ckpt.pth \
-    --student_method finetune \
+    --student_method global_datasetgrad_divmag_iter \
     --fixed_pic \
     --train_all \
     --prune_interval 100 \
-    --weight_total_ratio 0.05 \
+    --weight_total_ratio 0.15 \
     --weight_ratio_per_prune 0 \
-    --weight_init_prune_ratio 0.05 \
+    --weight_init_prune_ratio 0.15 \
     --trial_iteration 3000 \
     --trial_lr ${lr} \
     --trial_momentum 0.9 \
     --trial_weight_decay 0 \
     --dropout 1e-1 \
-    --reinit \
-    &
+    # &
 
     done
 done

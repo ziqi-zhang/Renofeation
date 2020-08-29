@@ -102,6 +102,7 @@ def get_args():
     # weight dist
     parser.add_argument("--finetune_ckpt", type=str, default='')
     parser.add_argument("--retrain_ckpt", type=str, default='')
+    parser.add_argument("--prune_ckpt", type=str, default='')
     parser.add_argument("--renofeation_ckpt", type=str, default='')
     parser.add_argument("--my_ckpt", type=str, default='')
     args = parser.parse_args()
@@ -237,7 +238,7 @@ def draw_cmp_cam(model, batch, advbatch, attention_layer_names):
 
 def draw_attention(
     dataloader, adversary, args, unnormalize,
-    teacher, finetune, retrain, renofeation, my_model
+    teacher, finetune, retrain, prune, renofeation, my_model
 ):
     # attention_layer_names = []
     # for name, module in teacher.named_modules():
@@ -245,7 +246,7 @@ def draw_attention(
     #         attention_layer_names.append(name)
     # 这里只提取网络在layer4的feature map作为attention
     attention_layer_names = ["layer4"]
-    models = [teacher, finetune, retrain, renofeation, my_model]
+    models = [teacher, finetune, retrain, prune, renofeation, my_model]
     # 对所有模型register_hook，这样才能获取网络中间的feature map
     model_hooks = []
     for model in models:
@@ -285,10 +286,11 @@ def draw_attention(
         teacher_cam = draw_cmp_cam(teacher, batch, advbatch, attention_layer_names)
         finetune_cam = draw_cmp_cam(finetune, batch, advbatch, attention_layer_names)
         retrain_cam = draw_cmp_cam(retrain, batch, advbatch, attention_layer_names)
+        prune_cam = draw_cmp_cam(prune, batch, advbatch, attention_layer_names)
         renofeation_cam = draw_cmp_cam(renofeation, batch, advbatch, attention_layer_names)
         my_cam = draw_cmp_cam(my_model, batch, advbatch, attention_layer_names)
         cams = [
-            teacher_cam, finetune_cam, retrain_cam, renofeation_cam, my_cam
+            teacher_cam, finetune_cam, retrain_cam, prune_cam, renofeation_cam, my_cam
         ]
 
         # out = teacher(batch)
@@ -390,11 +392,12 @@ if __name__=="__main__":
     )
     # 读取四个不同的模型，这里的模型是在其他地方先训好
     retrain = load_student(args.retrain_ckpt, args, train_loader.dataset.num_classes)
+    prune = load_student(args.prune_ckpt, args, train_loader.dataset.num_classes)
     finetune = load_student(args.finetune_ckpt, args, train_loader.dataset.num_classes)
     renofeation = load_student(args.renofeation_ckpt, args, train_loader.dataset.num_classes)
     my_model = load_student(args.my_ckpt, args, train_loader.dataset.num_classes)
     # 画图
     draw_attention(
         test_loader, adversary, args, unnormalize,
-        teacher, finetune, retrain, renofeation, my_model
+        teacher, finetune, retrain, prune, renofeation, my_model
     )

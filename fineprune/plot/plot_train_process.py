@@ -124,13 +124,13 @@ def get_args():
 def plot_process(finetune, retrain, reno, my):
 
     plt.plot(finetune.iter.tolist(), finetune.Acc.tolist(), label="Fine-tune",
-            linewidth=2, linestyle="solid", color="green")
+            linewidth=2, linestyle="dashdot", color="green")
     plt.plot(retrain.iter.tolist(), retrain.Acc.tolist(), label="Retrain",
             linewidth=2, linestyle="dotted", color="red")
     plt.plot(reno.iter.tolist(), reno.Acc.tolist(), label="Renofeation",
-            linewidth=2, linestyle="dashed", color="blue")
+            linewidth=2, linestyle="dashed", color="gray")
     plt.plot(my.iter.tolist(), my.Acc.tolist(), label="Our approach",
-            linewidth=2, linestyle="dashdot", color="gray")
+            linewidth=2, linestyle="solid", color="blue")
     
     plt.plot([0, 3000], [0, 0], color='black', linewidth=3, marker='*')
     plt.annotate('Trial-tune', xy=(3300, 2), xytext=(10000, 10),
@@ -144,7 +144,7 @@ def plot_process(finetune, retrain, reno, my):
     plt.xlabel('Iteration', fontsize=25)
     plt.xticks(fontsize=25)
     plt.xticks((20000, 40000, 60000, 80000), ("20K", "40K", "60K", "80K"))
-    plt.ylabel('Accuracy', fontsize=25)
+    plt.ylabel('Accuracy (ACC)', fontsize=25)
     plt.yticks(fontsize=25)
     # plt.legend(loc='lower right', prop={'size': 20})
     # plt.xlim(-0.5, 0.5)
@@ -158,16 +158,16 @@ def plot_process(finetune, retrain, reno, my):
 def plot_process_adv(finetune, retrain, reno, my):
 
     plt.plot(finetune.iter.tolist(), finetune.ASR.tolist(), label="Fine-tune",
-            linewidth=2, linestyle="solid", color="green")
+            linewidth=2, linestyle="dashdot", color="green")
     plt.plot(retrain.iter.tolist(), retrain.ASR.tolist(), label="Retrain",
             linewidth=2, linestyle="dotted", color="red")
     plt.plot(reno.iter.tolist(), reno.ASR.tolist(), label="Renofeation",
-            linewidth=2, linestyle="dashed", color="blue")
-    plt.plot(my.iter.tolist(), my.ASR.tolist(), label="Our approach",
-            linewidth=2, linestyle="dashdot", color="gray")
+            linewidth=2, linestyle="dashed", color="gray")
+    plt.plot(my.iter.tolist(), my.ASR.tolist(), label="SelF",
+            linewidth=2, linestyle="solid", color="blue")
     
     plt.plot([0, 3000], [10, 10], color='black', linewidth=3, marker='*')
-    plt.annotate('Trial-tune', xy=(3300, 12), xytext=(10000, 20),
+    plt.annotate('Trial-tune', xy=(0, 12), xytext=(0, 20),
             xycoords='data',
             arrowprops=dict(facecolor='black', shrink=1),
             fontsize=25,

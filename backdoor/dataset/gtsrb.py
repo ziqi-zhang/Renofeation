@@ -46,7 +46,7 @@ def add4trig(img, firefox):
 
 class GTSRBData(data.Dataset):
     def __init__(self, root, is_train=False, transform=None, shots=-1, seed=0, preload=False, portion=0,
-                 fixed_pic=False, four_corner=False, return_raw=False):
+                 fixed_pic=False, four_corner=False, return_raw=False, is_poison=False):
         self.four_corner = four_corner
         self.num_classes = 43
         self.transform = transform
