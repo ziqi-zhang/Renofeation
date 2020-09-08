@@ -107,6 +107,15 @@ The scripts for training and evaluating *DELTA*, *Renofeation*, and *Re-training
 }
 ```
 
+## To 锡涵 20200908
+按照paper中的设置补充跑GTSRB, LISA和Pubfig三个数据集的一些结果，如果有的数据集太大的话需要把数据集缩减一下。整体的目标如下：
+- 先把三个数据集retrain的结果跑一下（之前我们只跑了finetune），看看准确率是不是会降低很多（10%左右）
+- GTSRB的retrain准确率应该跟finetune差不多（这是我们不想要的）。所以可能需要对GTSRB做出一些调整，使用之前dataset中的shot，在训练的时候对每一个label都取一定数量的图片，而不是取全部数据集。这个可能要实现一下。pubfig83和lisa如果也存在retrain和finetune的acc差不多的情况，那么也需要调整一下。这里shot的设置要跑一些实验选择一下，达到retrain和finetune的准确率有10%差距的效果。
+- 三个数据集的shot选择都确定之后，再跑另外两个实验，包括剪枝80%以及我们的方法。
+
+
+
+
 ## To 锡涵 20200728
 下一步工作主要分三块，按照这个顺序依次做就行：
 - 画一些针对交通标志识别GTSRB的attention map
