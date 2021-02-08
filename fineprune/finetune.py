@@ -55,6 +55,7 @@ from fineprune.mid_datasetgrad_optim import MidDeltaW
 from fineprune.random_prune import RandomPruner
 from fineprune.student_weight import StudentWeightPruner
 from fineprune.student_weight_divmag import StudentWeightPrunerDivMag
+from fineprune.divmag_adam import DivMagAdam
 
 
 def get_args():
@@ -344,6 +345,13 @@ if __name__=="__main__":
         )
     elif args.method == "random":
         finetune_machine = RandomPruner(
+            args,
+            model, teacher,
+            train_loader, test_loader,
+        )
+    # icse rebuttal
+    elif args.method == "divmag_adam":
+        finetune_machine = DivMagAdam(
             args,
             model, teacher,
             train_loader, test_loader,

@@ -317,6 +317,7 @@ class Finetuner(object):
                     weight_decay=args.weight_decay,
                 )
             else:
+                
                 optimizer = optim.SGD(
                     model.parameters(), 
                     lr=lr, 
@@ -325,6 +326,7 @@ class Finetuner(object):
                 )
 
         else:
+            
             optimizer = optim.SGD(
                 model.parameters(), 
                 lr=lr, 
